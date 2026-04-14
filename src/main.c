@@ -12,15 +12,10 @@
 #include "components/display/ui/ui_data.h"
 #include "components/display/ui/ui.h"
 
-// ---------------------------------------------------------------
-// Intervalo de polling OBD
-// ---------------------------------------------------------------
 #define OBD_POLL_MS 300
 #define TOUCH_POLL_MS 20
 
-// ---------------------------------------------------------------
-// Dados OBD (voláteis, escritos pela task OBD)
-// ---------------------------------------------------------------
+// Dados OBD brutos (escritos pela task OBD)
 static volatile struct
 {
     uint16_t rpm;
@@ -32,16 +27,61 @@ static volatile struct
 } g_obd = {0};
 
 // ---------------------------------------------------------------
-// Preenche um ui_maint_row_t a partir de um maint_item_t
+// Readiness — calculado exclusivamente a partir dos registros
+//
+// Cada um dos MAINT_COUNT itens vale 100/MAINT_COUNT pontos.
+//   NO_RECORD: penalidade total   (nunca verificado)
+//   DUE:       penalidade total   (vencido)
+//   WARN:      penalidade parcial (50% do valor do item)
+//   OK:        sem penalidade
+// ---------------------------------------------------------------
+static uint8_t calc_readiness(const vehicle_data_t *vd)
+{
+    const int pts = 100 / MAINT_COUNT; // pontos por item (~14)
+    int score = 100;
+    for (int i = 0; i < MAINT_COUNT; i++)
+    {
+        const maint_item_t *it = &vd->items[i];
+        if (!it->valid)
+        {
+            score -= pts; // sem registro = desconhecido = penalidade total
+            continue;
+        }
+        maint_calc_t c = maint_calc(it, vd->total_km);
+        if (c.status == MAINT_STATUS_DUE)
+            score -= pts;
+        else if (c.status == MAINT_STATUS_WARN)
+            score -= pts / 2;
+    }
+    if (score < 0)
+        score = 0;
+    return (uint8_t)score;
+}
+
+// ---------------------------------------------------------------
+// Preenche um ui_maint_row_t a partir da estrutura interna
 // ---------------------------------------------------------------
 static void fill_maint_row(ui_maint_row_t *row, const maint_item_t *item,
                            maint_id_t id, int32_t current_km)
 {
     strncpy(row->name, MAINT_NAMES[id], sizeof(row->name) - 1);
     row->name[sizeof(row->name) - 1] = '\0';
+    row->valid = item->valid;
+    row->last_km = item->last_km;
+    row->interval_km = item->interval_km;
+
+    if (!item->valid)
+    {
+        // Nunca registrado — status especial sem registro
+        row->status = UI_MAINT_NO_RECORD;
+        row->km_remaining = 0;
+        row->next_km = item->interval_km; // estimativa a partir de agora
+        row->progress_pct = 0;
+        row->last_date[0] = '\0';
+        return;
+    }
 
     maint_calc_t c = maint_calc(item, current_km);
-
     switch (c.status)
     {
     case MAINT_STATUS_OK:
@@ -56,11 +96,9 @@ static void fill_maint_row(ui_maint_row_t *row, const maint_item_t *item,
     }
 
     row->km_remaining = c.km_remaining;
-    row->last_km = item->last_km;
     row->next_km = c.next_km;
-    row->interval_km = item->interval_km;
-    row->valid = item->valid;
 
+    // Progresso dentro do intervalo
     if (item->interval_km > 0)
     {
         int32_t done = current_km - item->last_km;
@@ -73,43 +111,64 @@ static void fill_maint_row(ui_maint_row_t *row, const maint_item_t *item,
         row->progress_pct = 0;
     }
 
-    if (item->valid)
-        snprintf(row->last_date, sizeof(row->last_date),
-                 "%02u/%02u/%02u",
-                 (unsigned int)(item->last_day % 100),
-                 (unsigned int)(item->last_month % 100),
-                 (unsigned int)(item->last_year % 100));
-    else
-        row->last_date[0] = '\0';
+    unsigned int day = item->last_day % 100;
+    unsigned int month = item->last_month % 100;
+    unsigned int year = item->last_year % 10000;
+
+    snprintf(row->last_date, sizeof(row->last_date),
+             "%02u/%02u/%04u",
+             day, month, year);
 }
 
 // ---------------------------------------------------------------
-// Recalcula readiness_pct (0-100) baseado nos alertas de manutenção
+// Gera lista de alertas ordenada: críticos (DUE) primeiro,
+// depois warnings (WARN e NO_RECORD)
 // ---------------------------------------------------------------
-static uint8_t calc_readiness(const vehicle_data_t *vd)
+static void build_alerts(ui_dataset_t *ds, const vehicle_data_t *vd)
 {
-    int score = 100;
-    for (int i = 0; i < MAINT_COUNT; i++)
+    ds->alert_n = 0;
+
+    // 1ª passagem: DUE (vermelho)
+    for (int i = 0; i < ds->maint_n && ds->alert_n < UI_MAX_ALERTS; i++)
     {
-        if (!vd->items[i].valid)
+        const ui_maint_row_t *m = &ds->maint[i];
+        if (m->status != UI_MAINT_DUE)
             continue;
-        maint_calc_t c = maint_calc(&vd->items[i], vd->total_km);
-        if (c.status == MAINT_STATUS_DUE)
-            score -= 15;
-        else if (c.status == MAINT_STATUS_WARN)
-            score -= 5;
+        ui_alert_row_t *a = &ds->alerts[ds->alert_n++];
+        a->level = UI_ALERT_CRITICAL;
+        snprintf(a->text, sizeof(a->text),
+                 "VENCIDO: %s (%ldKM)",
+                 m->name, (long)(-m->km_remaining));
     }
-    if (score < 0)
-        score = 0;
-    return (uint8_t)score;
+
+    // 2ª passagem: WARN e NO_RECORD (amarelo)
+    for (int i = 0; i < ds->maint_n && ds->alert_n < UI_MAX_ALERTS; i++)
+    {
+        const ui_maint_row_t *m = &ds->maint[i];
+        if (m->status == UI_MAINT_WARN)
+        {
+            ui_alert_row_t *a = &ds->alerts[ds->alert_n++];
+            a->level = UI_ALERT_WARNING;
+            snprintf(a->text, sizeof(a->text),
+                     "PROXIMO: %s em %ldKM",
+                     m->name, (long)m->km_remaining);
+        }
+        else if (m->status == UI_MAINT_NO_RECORD)
+        {
+            ui_alert_row_t *a = &ds->alerts[ds->alert_n++];
+            a->level = UI_ALERT_WARNING;
+            snprintf(a->text, sizeof(a->text),
+                     "SEM REGISTRO: %.20s",
+                     m->name);
+        }
+    }
 }
 
 // ---------------------------------------------------------------
-// Atualiza o dataset completo a partir do estado do app
+// Atualiza todo o dataset a partir do estado atual do app
 // ---------------------------------------------------------------
 static void update_dataset(ui_dataset_t *ds, const vehicle_data_t *vd)
 {
-    // OBD
     ds->obd.rpm = g_obd.rpm;
     ds->obd.speed_kmh = g_obd.speed_kmh;
     ds->obd.temp_c = g_obd.temp_c;
@@ -118,61 +177,40 @@ static void update_dataset(ui_dataset_t *ds, const vehicle_data_t *vd)
     ds->obd.engine_hours = g_obd.engine_hours;
     ds->obd.readiness_pct = calc_readiness(vd);
 
-    // Manutenção
     ds->maint_n = MAINT_COUNT;
     for (int i = 0; i < MAINT_COUNT; i++)
         fill_maint_row(&ds->maint[i], &vd->items[i], (maint_id_t)i, vd->total_km);
 
-    // Alertas
-    ds->alert_n = 0;
-    for (int i = 0; i < MAINT_COUNT && ds->alert_n < UI_MAX_ALERTS; i++)
-    {
-        maint_calc_t c = maint_calc(&vd->items[i], vd->total_km);
-        if (c.status == MAINT_STATUS_DUE)
-        {
-            ui_alert_row_t *a = &ds->alerts[ds->alert_n++];
-            a->level = UI_ALERT_CRITICAL;
-            snprintf(a->text, sizeof(a->text),
-                     "TROCA VENCIDA: %s (%ld KM)",
-                     MAINT_NAMES[i], (long)(-c.km_remaining));
-        }
-        else if (c.status == MAINT_STATUS_WARN)
-        {
-            ui_alert_row_t *a = &ds->alerts[ds->alert_n++];
-            a->level = UI_ALERT_WARNING;
-            snprintf(a->text, sizeof(a->text),
-                     "PROXIMA: %s em %ld KM",
-                     MAINT_NAMES[i], (long)c.km_remaining);
-        }
-    }
+    build_alerts(ds, vd);
 }
 
 // ---------------------------------------------------------------
-// Callback de registro — chamado pela UI quando usuário confirma
+// Callback de registro — chamado pela UI com KM e data do usuário
 // ---------------------------------------------------------------
-static void on_register_maint(uint8_t idx, void *userdata)
+static void on_register_maint(uint8_t idx, int32_t km,
+                              uint8_t day, uint8_t month, uint16_t year,
+                              void *userdata)
 {
     vehicle_data_t *vd = (vehicle_data_t *)userdata;
     if (idx >= MAINT_COUNT)
         return;
 
-    // TODO: integrar RTC para data real
-    maint_register(&vd->items[idx], vd->total_km, 1, 1, 2025);
+    maint_register(&vd->items[idx], km, day, month, year);
     maint_nvs_save(vd);
-    maint_spiffs_log((maint_id_t)idx, vd->total_km, 1, 1, 2025);
+    maint_spiffs_log((maint_id_t)idx, km, day, month, year);
 }
 
 // ---------------------------------------------------------------
-// Task OBD (simulada — substituir por obd_read_pid())
+// Task OBD (simulada)
 // ---------------------------------------------------------------
 static void obd_task(void *arg)
 {
     while (1)
     {
-        // g_obd.rpm          = obd_get_rpm();
-        // g_obd.speed_kmh    = obd_read_pid(0x0D);
-        // g_obd.temp_c       = obd_read_pid(0x05) - 40;
-        // g_obd.fuel_pct     = obd_read_pid(0x2F) * 100 / 255;
+        // g_obd.rpm        = obd_get_rpm();
+        // g_obd.speed_kmh  = obd_read_pid(0x0D);
+        // g_obd.temp_c     = obd_read_pid(0x05) - 40;
+        // g_obd.fuel_pct   = obd_read_pid(0x2F) * 100 / 255;
         vTaskDelay(pdMS_TO_TICKS(OBD_POLL_MS));
     }
 }
@@ -191,13 +229,13 @@ static void main_task(void *arg)
     }
 
     // SPIFFS
-    esp_vfs_spiffs_conf_t spiffs_cfg = {
+    esp_vfs_spiffs_conf_t sc = {
         .base_path = "/spiffs",
         .partition_label = NULL,
         .max_files = 5,
         .format_if_mount_failed = true,
     };
-    esp_vfs_spiffs_register(&spiffs_cfg);
+    esp_vfs_spiffs_register(&sc);
 
     display_init();
     touch_init();
@@ -207,12 +245,12 @@ static void main_task(void *arg)
     if (calibration_load(&cal) != ESP_OK || !cal.valid)
         calibration_run(&cal);
 
-    // Dados do veículo
+    // Carrega dados de manutenção
     vehicle_data_t vd;
     if (maint_nvs_load(&vd) != ESP_OK)
         maint_init_defaults(&vd);
 
-    // Popula histórico a partir do SPIFFS
+    // Dataset para a UI
     static ui_dataset_t ds;
     memset(&ds, 0, sizeof(ds));
 
@@ -224,40 +262,36 @@ static void main_task(void *arg)
         while (line && ds.hist_n < UI_MAX_HIST)
         {
             ui_hist_row_t *h = &ds.hist[ds.hist_n];
-            sscanf(line, "%11[^;];%19[^;];%9s", h->date, h->item, h->km);
-            if (h->date[0])
+            if (sscanf(line, "%11[^;];%19[^;];%9s", h->date, h->item, h->km) == 3)
                 ds.hist_n++;
             line = strtok(NULL, "\n");
         }
     }
 
     // Inicializa UI
-    ui_ctx_t ctx;
     update_dataset(&ds, &vd);
+    ui_ctx_t ctx;
     ui_init(&ctx, &ds, on_register_maint, &vd);
 
     xTaskCreate(obd_task, "obd_task", 4096, NULL, 4, NULL);
 
     bool was_pressed = false;
-    uint32_t last_obd_update = 0;
+    uint32_t last_update = 0;
 
     while (1)
     {
         uint32_t now = (uint32_t)(esp_timer_get_time() / 1000);
 
-        // Atualiza dataset com novos dados OBD a cada intervalo
-        if (now - last_obd_update >= OBD_POLL_MS)
+        if (now - last_update >= OBD_POLL_MS)
         {
             vd.total_km = g_obd.km_total;
             update_dataset(&ds, &vd);
             ui_update_obd(&ctx);
-            last_obd_update = now;
+            last_update = now;
         }
 
-        // Redesenha
         ui_draw(&ctx);
 
-        // Toque
         uint16_t rx, ry;
         bool pressed = touch_get_raw(&rx, &ry);
         if (pressed && !was_pressed)
@@ -267,7 +301,6 @@ static void main_task(void *arg)
                 ui_handle_touch(&ctx, px, py);
         }
         was_pressed = pressed;
-
         vTaskDelay(pdMS_TO_TICKS(TOUCH_POLL_MS));
     }
 }

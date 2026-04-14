@@ -5,31 +5,32 @@
 #include <stdbool.h>
 
 // ---------------------------------------------------------------
-// Dados OBD — preenchidos pelo app, consumidos pela UI
+// Dados OBD
 // ---------------------------------------------------------------
 typedef struct
 {
     uint16_t rpm;
     uint16_t speed_kmh;
     uint8_t temp_c;
-    uint8_t fuel_pct; // 0–100
+    uint8_t fuel_pct;
     int32_t total_km;
     uint16_t engine_hours;
-    uint8_t readiness_pct; // 0–100 (saúde geral calculada pelo app)
+    uint8_t readiness_pct; // calculado pelo app com base nos registros
 } ui_obd_t;
 
 // ---------------------------------------------------------------
-// Status de um item de manutenção
+// Status de manutenção — 4 estados distintos
 // ---------------------------------------------------------------
 typedef enum
 {
-    UI_MAINT_OK = 0,
-    UI_MAINT_WARN = 1, // <= 10% de intervalo restante
-    UI_MAINT_DUE = 2,  // Vencido
+    UI_MAINT_OK = 0,        // OK, dentro do intervalo
+    UI_MAINT_WARN = 1,      // Amarelo: próximo do vencimento (<=10% restante)
+    UI_MAINT_DUE = 2,       // Vermelho: intervalo vencido
+    UI_MAINT_NO_RECORD = 3, // Amarelo: sem registro — nunca foi checado
 } ui_maint_status_t;
 
 // ---------------------------------------------------------------
-// Item de manutenção para exibição
+// Item de manutenção
 // ---------------------------------------------------------------
 #define UI_MAX_MAINT 7
 
@@ -37,48 +38,46 @@ typedef struct
 {
     char name[20];
     ui_maint_status_t status;
-    int32_t km_remaining; // Negativo = vencido
+    int32_t km_remaining; // negativo = vencido
     int32_t last_km;
     int32_t next_km;
     int32_t interval_km;
     uint8_t progress_pct; // 0–100
-    char last_date[12];   // "DD/MM/AAAA" ou ""
-    bool valid;           // Já foi registrado ao menos uma vez
+    char last_date[14];   // "DD/MM/AAAA" ou ""
+    bool valid;
 } ui_maint_row_t;
 
 // ---------------------------------------------------------------
-// Registro do histórico
+// Histórico
 // ---------------------------------------------------------------
 #define UI_MAX_HIST 10
 
 typedef struct
 {
-    char date[12]; // "DD/MM/AAAA"
-    char item[20]; // Nome do item
-    char km[10];   // "87.432"
+    char date[12];
+    char item[20];
+    char km[10];
 } ui_hist_row_t;
 
 // ---------------------------------------------------------------
-// Alerta / lembrete
+// Alertas — pré-ordenados pelo app (críticos primeiro)
 // ---------------------------------------------------------------
-#define UI_MAX_ALERTS 6
+#define UI_MAX_ALERTS 14 // 7 DUE + 7 WARN/NO_RECORD
 
 typedef enum
 {
-    UI_ALERT_CRITICAL = 0, // Borda vermelha
-    UI_ALERT_WARNING = 1,  // Borda laranja
-    UI_ALERT_INFO = 2,     // Borda cinza
+    UI_ALERT_CRITICAL = 0, // vermelho — DUE
+    UI_ALERT_WARNING = 1,  // amarelo — WARN ou NO_RECORD
 } ui_alert_level_t;
 
 typedef struct
 {
     ui_alert_level_t level;
-    char text[52];
+    char text[60];
 } ui_alert_row_t;
 
 // ---------------------------------------------------------------
-// Dataset completo — tudo que a UI precisa para renderizar
-// O app preenche esse struct; a UI nunca toca em NVS/SPIFFS/OBD
+// Dataset completo — UI só lê, nunca escreve em storage
 // ---------------------------------------------------------------
 typedef struct
 {
