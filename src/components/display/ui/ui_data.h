@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "components/settings/settings.h"
+#include "components\maintenance\maintenance.h" // maint_log_entry_t, MAINT_LOG_MAX_VISIBLE
 
 // ---------------------------------------------------------------
 // Dados OBD
@@ -25,9 +26,9 @@ typedef struct
 typedef enum
 {
     UI_MAINT_OK = 0,
-    UI_MAINT_WARN = 1,
-    UI_MAINT_DUE = 2,
-    UI_MAINT_NO_RECORD = 3,
+    UI_MAINT_WARN,
+    UI_MAINT_DUE,
+    UI_MAINT_NO_RECORD,
 } ui_maint_status_t;
 
 #define UI_MAX_MAINT 7
@@ -46,9 +47,9 @@ typedef struct
 } ui_maint_row_t;
 
 // ---------------------------------------------------------------
-// Histórico
+// Histórico — lido do SD (newest-first)
 // ---------------------------------------------------------------
-#define UI_MAX_HIST 10
+#define UI_MAX_HIST 50 // suficiente para exibir todo o histórico do SD
 
 typedef struct
 {
@@ -86,7 +87,39 @@ typedef struct
     uint8_t hist_n;
     ui_alert_row_t alerts[UI_MAX_ALERTS];
     uint8_t alert_n;
-    app_settings_t settings; // lido do NVS na inicialização
+    app_settings_t settings;
 } ui_dataset_t;
+
+// ---------------------------------------------------------------
+// Helper — popula hist[] a partir do log do SD
+//
+// Chame após maint_sd_read_log() em qualquer atualização de tela.
+// Exemplo de uso na camada de aplicação:
+//
+//   maint_log_entry_t log[UI_MAX_HIST];
+//   uint8_t n = 0;
+//   maint_sd_read_log(log, UI_MAX_HIST, &n);
+//   ui_dataset_populate_hist(&dataset, log, n);
+// ---------------------------------------------------------------
+static inline void ui_dataset_populate_hist(ui_dataset_t *d,
+                                            const maint_log_entry_t *entries,
+                                            uint8_t count)
+{
+    if (count > UI_MAX_HIST)
+        count = UI_MAX_HIST;
+    d->hist_n = count;
+    for (uint8_t i = 0; i < count; i++)
+    {
+        // strncpy seguro — campos têm mesmas dimensões em ambas as structs
+        __builtin_strncpy(d->hist[i].date, entries[i].date, sizeof(d->hist[i].date) - 1);
+        d->hist[i].date[sizeof(d->hist[i].date) - 1] = '\0';
+
+        __builtin_strncpy(d->hist[i].item, entries[i].item, sizeof(d->hist[i].item) - 1);
+        d->hist[i].item[sizeof(d->hist[i].item) - 1] = '\0';
+
+        __builtin_strncpy(d->hist[i].km, entries[i].km, sizeof(d->hist[i].km) - 1);
+        d->hist[i].km[sizeof(d->hist[i].km) - 1] = '\0';
+    }
+}
 
 #endif // UI_DATA_H

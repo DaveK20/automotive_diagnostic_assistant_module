@@ -1,9 +1,9 @@
 #include "led.h"
 #include "driver/gpio.h"
 
-static uint8_t led_gpio;
+static gpio_num_t led_gpio;
 
-void led_init(uint8_t gpio)
+void led_init(gpio_num_t gpio)
 {
     led_gpio = gpio;
 

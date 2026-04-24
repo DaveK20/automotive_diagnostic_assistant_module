@@ -8,25 +8,25 @@
 // ---------------------------------------------------------------
 // Pinos Display ILI9341 — SPI2 (HSPI)
 // ---------------------------------------------------------------
-#define DISPLAY_PIN_MOSI 13
-#define DISPLAY_PIN_MISO 12
-#define DISPLAY_PIN_CLK 14
-#define DISPLAY_PIN_CS 15
-#define DISPLAY_PIN_DC 4 // D/C no GPIO 4
-#define DISPLAY_PIN_RST -1
-#define DISPLAY_PIN_BL 21
+#define DISPLAY_PIN_MOSI GPIO_NUM_13
+#define DISPLAY_PIN_MISO GPIO_NUM_12
+#define DISPLAY_PIN_CLK GPIO_NUM_14
+#define DISPLAY_PIN_CS GPIO_NUM_15
+#define DISPLAY_PIN_DC GPIO_NUM_4 // D/C no GPIO 4
+#define DISPLAY_PIN_RST GPIO_NUM_-1
+#define DISPLAY_PIN_BL GPIO_NUM_21
 
 // LED onboard (GPIO 2 liberado pois D/C está no 4)
-#define LED_ONBOARD 2
+#define LED_ONBOARD GPIO_NUM_2
 
 // ---------------------------------------------------------------
 // Pinos Touch XPT2046 — SPI3 (VSPI), CS via GPIO
 // ---------------------------------------------------------------
-#define TOUCH_PIN_MOSI 32
-#define TOUCH_PIN_MISO 22
-#define TOUCH_PIN_CLK 25
-#define TOUCH_PIN_CS 33
-#define TOUCH_PIN_IRQ 23
+#define TOUCH_PIN_MOSI GPIO_NUM_32
+#define TOUCH_PIN_MISO GPIO_NUM_22
+#define TOUCH_PIN_CLK GPIO_NUM_25
+#define TOUCH_PIN_CS GPIO_NUM_33
+#define TOUCH_PIN_IRQ GPIO_NUM_23
 
 // ---------------------------------------------------------------
 // Resolução — landscape 320×240

@@ -1,11 +1,15 @@
 #include <stdio.h>
 #include <string.h>
+#include <iostream>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "nvs_flash.h"
-#include "esp_spiffs.h"
 #include "esp_timer.h"
 #include "driver/gpio.h"
+#include "driver/spi_common.h"
+#include "driver/sdspi_host.h"
+#include "esp_vfs_fat.h"
+#include "sdmmc_cmd.h"
 #include "components/display/display.h"
 #include "components/display/calibration.h"
 #include "components/maintenance/maintenance.h"
@@ -13,9 +17,22 @@
 #include "components/display/ui/ui_data.h"
 #include "components/display/ui/ui.h"
 
+// ---------------------------------------------------------------
+// Pinos SD (SPI) — ajuste conforme seu hardware
+// ---------------------------------------------------------------
+#define SD_MOSI_PIN 23
+#define SD_MISO_PIN 19
+#define SD_CLK_PIN 18
+#define SD_CS_PIN 5
+#define SD_SPI_HOST SPI2_HOST
+#define SD_MOUNT_POINT "/sd"
+
 #define OBD_POLL_MS 300
 #define TOUCH_POLL_MS 20
 
+// ---------------------------------------------------------------
+// Dados OBD (atualizados pela task OBD)
+// ---------------------------------------------------------------
 static volatile struct
 {
     uint16_t rpm, speed_kmh;
@@ -23,6 +40,55 @@ static volatile struct
     int32_t km_total;
     uint16_t engine_hours;
 } g_obd = {0};
+
+// ---------------------------------------------------------------
+// Inicialização do SD via SPI (FATFS)
+// ---------------------------------------------------------------
+static sdmmc_card_t *sd_card = NULL;
+
+static esp_err_t sd_init(void)
+{
+    spi_bus_config_t bus = {
+        .mosi_io_num = SD_MOSI_PIN,
+        .miso_io_num = SD_MISO_PIN,
+        .sclk_io_num = SD_CLK_PIN,
+        .quadwp_io_num = -1,
+        .quadhd_io_num = -1,
+        .max_transfer_sz = 4096,
+    };
+    esp_err_t ret = spi_bus_initialize(SD_SPI_HOST, &bus, SDSPI_DEFAULT_DMA);
+    if (ret != ESP_OK)
+    {
+        printf("[SD] Falha ao inicializar barramento SPI: %s\n", esp_err_to_name(ret));
+        return ret;
+    }
+
+    sdspi_device_config_t slot = SDSPI_DEVICE_CONFIG_DEFAULT();
+    slot.gpio_cs = (gpio_num_t)SD_CS_PIN;
+    slot.host_id = SD_SPI_HOST;
+
+    esp_vfs_fat_sdmmc_mount_config_t mount_cfg = {
+        .format_if_mount_failed = false,
+        .max_files = 5,
+        .allocation_unit_size = 16 * 1024,
+    };
+
+    sdmmc_host_t host = SDSPI_HOST_DEFAULT();
+    host.slot = SD_SPI_HOST;
+
+    ret = esp_vfs_fat_sdspi_mount(SD_MOUNT_POINT, &host, &slot, &mount_cfg, &sd_card);
+    if (ret != ESP_OK)
+    {
+        printf("[SD] Falha ao montar: %s\n", esp_err_to_name(ret));
+        spi_bus_free(SD_SPI_HOST);
+        return ret;
+    }
+
+    printf("[SD] Montado em %s — %.0f MB\n",
+           SD_MOUNT_POINT,
+           (double)((uint64_t)sd_card->csd.capacity * sd_card->csd.sector_size) / (1024 * 1024));
+    return ESP_OK;
+}
 
 // ---------------------------------------------------------------
 // Readiness baseado nos registros de manutenção
@@ -49,7 +115,7 @@ static uint8_t calc_readiness(const vehicle_data_t *vd)
 }
 
 // ---------------------------------------------------------------
-// Preenche um ui_maint_row_t
+// Preenche ui_maint_row_t
 // ---------------------------------------------------------------
 static void fill_maint_row(ui_maint_row_t *row, const maint_item_t *item,
                            maint_id_t id, int32_t km)
@@ -69,6 +135,7 @@ static void fill_maint_row(ui_maint_row_t *row, const maint_item_t *item,
         row->last_date[0] = '\0';
         return;
     }
+
     maint_calc_t c = maint_calc(item, km);
     switch (c.status)
     {
@@ -84,6 +151,7 @@ static void fill_maint_row(ui_maint_row_t *row, const maint_item_t *item,
     }
     row->km_remaining = c.km_remaining;
     row->next_km = c.next_km;
+
     if (item->interval_km > 0)
     {
         int32_t done = km - item->last_km;
@@ -96,21 +164,10 @@ static void fill_maint_row(ui_maint_row_t *row, const maint_item_t *item,
         row->progress_pct = 0;
     }
 
-    unsigned int day = item->last_day;
-    unsigned int month = item->last_month;
-    unsigned int year = item->last_year;
-
-    // Limita valores (IMPORTANTE)
-    if (day > 99)
-        day = 99;
-    if (month > 99)
-        month = 99;
-    if (year > 9999)
-        year = 9999;
-
-    snprintf(row->last_date, sizeof(row->last_date),
-             "%02u/%02u/%04u",
-             day, month, year);
+    unsigned int day = item->last_day > 99 ? 99 : item->last_day;
+    unsigned int mon = item->last_month > 99 ? 99 : item->last_month;
+    unsigned int yr = item->last_year > 9999 ? 9999 : item->last_year;
+    snprintf(row->last_date, sizeof(row->last_date), "%02u/%02u/%04u", day, mon, yr);
 }
 
 // ---------------------------------------------------------------
@@ -119,7 +176,6 @@ static void fill_maint_row(ui_maint_row_t *row, const maint_item_t *item,
 static void build_alerts(ui_dataset_t *ds, const vehicle_data_t *vd)
 {
     ds->alert_n = 0;
-    // 1ª passagem: vencidos (vermelho)
     for (int i = 0; i < ds->maint_n && ds->alert_n < UI_MAX_ALERTS; i++)
     {
         const ui_maint_row_t *m = &ds->maint[i];
@@ -130,7 +186,6 @@ static void build_alerts(ui_dataset_t *ds, const vehicle_data_t *vd)
         snprintf(a->text, sizeof(a->text),
                  "VENCIDO: %.20s (%ldKM)", m->name, (long)(-m->km_remaining));
     }
-    // 2ª passagem: próximos e sem registro (amarelo)
     for (int i = 0; i < ds->maint_n && ds->alert_n < UI_MAX_ALERTS; i++)
     {
         const ui_maint_row_t *m = &ds->maint[i];
@@ -151,7 +206,7 @@ static void build_alerts(ui_dataset_t *ds, const vehicle_data_t *vd)
 }
 
 // ---------------------------------------------------------------
-// Atualiza dataset
+// Atualiza dataset (OBD + manutenção + alertas)
 // ---------------------------------------------------------------
 static void update_dataset(ui_dataset_t *ds, const vehicle_data_t *vd,
                            const app_settings_t *s)
@@ -171,24 +226,48 @@ static void update_dataset(ui_dataset_t *ds, const vehicle_data_t *vd,
 }
 
 // ---------------------------------------------------------------
-// Callbacks da UI
+// Recarrega histórico do SD para o dataset
+// ---------------------------------------------------------------
+static void reload_history(ui_dataset_t *ds)
+{
+    static maint_log_entry_t log_buf[UI_MAX_HIST];
+    uint8_t n = 0;
+    maint_sd_read_log(log_buf, UI_MAX_HIST, &n);
+    ui_dataset_populate_hist(ds, log_buf, n);
+}
+
+// ---------------------------------------------------------------
+// Contexto dos callbacks
 // ---------------------------------------------------------------
 typedef struct
 {
     vehicle_data_t *vd;
     app_settings_t *s;
     touch_cal_t *cal;
+    ui_dataset_t *ds;
 } app_cb_t;
 
+// ---------------------------------------------------------------
+// Callbacks da UI
+// ---------------------------------------------------------------
 static void on_register(uint8_t idx, int32_t km,
                         uint8_t day, uint8_t month, uint16_t year, void *ud)
 {
     app_cb_t *cb = (app_cb_t *)ud;
     if (idx >= MAINT_COUNT)
         return;
+
+    // Atualiza estado em memória
     maint_register(&cb->vd->items[idx], km, day, month, year);
-    maint_nvs_save(cb->vd);
-    maint_spiffs_log((maint_id_t)idx, km, day, month, year);
+
+    // Salva estado atual no SD (/sd/maint_data.json)
+    maint_sd_save(cb->vd);
+
+    // Acrescenta entrada no histórico (/sd/maint_log.json)
+    maint_sd_log_entry((maint_id_t)idx, km, day, month, year);
+
+    // Recarrega histórico na UI
+    reload_history(cb->ds);
 }
 
 static void on_settings(const app_settings_t *s, void *ud)
@@ -196,7 +275,6 @@ static void on_settings(const app_settings_t *s, void *ud)
     app_cb_t *cb = (app_cb_t *)ud;
     *cb->s = *s;
     settings_save(s);
-    // Futuro: aplicar brilho PWM, LEDs, etc.
 }
 
 static void on_interval(uint8_t idx, int32_t km, void *ud)
@@ -205,18 +283,14 @@ static void on_interval(uint8_t idx, int32_t km, void *ud)
     if (idx >= MAINT_COUNT)
         return;
     cb->vd->items[idx].interval_km = km;
-    maint_nvs_save(cb->vd);
+    maint_sd_save(cb->vd); // persiste o novo intervalo
 }
 
 static volatile bool g_do_calibrate = false;
-
-static void on_calibrate(void *ud)
-{
-    g_do_calibrate = true; // flag; tratado no main loop
-}
+static void on_calibrate(void *ud) { g_do_calibrate = true; }
 
 // ---------------------------------------------------------------
-// Task OBD
+// Task OBD (stub — preencha com suas leituras reais)
 // ---------------------------------------------------------------
 static void obd_task(void *arg)
 {
@@ -235,6 +309,7 @@ static void obd_task(void *arg)
 // ---------------------------------------------------------------
 static void main_task(void *arg)
 {
+    // NVS — necessário para settings
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND)
     {
@@ -242,13 +317,10 @@ static void main_task(void *arg)
         nvs_flash_init();
     }
 
-    esp_vfs_spiffs_conf_t sc = {
-        .base_path = "/spiffs",
-        .partition_label = NULL,
-        .max_files = 5,
-        .format_if_mount_failed = true,
-    };
-    esp_vfs_spiffs_register(&sc);
+    // SD card
+    bool sd_ok = (sd_init() == ESP_OK);
+    if (!sd_ok)
+        printf("[AVISO] SD indisponivel — dados nao serao persistidos.\n");
 
     display_init();
     touch_init();
@@ -257,9 +329,14 @@ static void main_task(void *arg)
     if (calibration_load(&cal) != ESP_OK || !cal.valid)
         calibration_run(&cal);
 
+    // Carrega dados do veículo do SD (ou defaults na 1ª vez)
     static vehicle_data_t vd;
-    if (maint_nvs_load(&vd) != ESP_OK)
+    if (!sd_ok || maint_sd_load(&vd) != ESP_OK)
+    {
         maint_init_defaults(&vd);
+        if (sd_ok)
+            maint_sd_save(&vd); // salva defaults no SD
+    }
 
     static app_settings_t settings;
     if (settings_load(&settings) != ESP_OK)
@@ -268,26 +345,18 @@ static void main_task(void *arg)
     static ui_dataset_t ds;
     memset(&ds, 0, sizeof(ds));
 
-    // Histórico do SPIFFS
-    static char log_buf[512];
-    if (maint_spiffs_read_log(log_buf, sizeof(log_buf)) == ESP_OK)
-    {
-        char *line = strtok(log_buf, "\n");
-        while (line && ds.hist_n < UI_MAX_HIST)
-        {
-            ui_hist_row_t *h = &ds.hist[ds.hist_n];
-            if (sscanf(line, "%11[^;];%19[^;];%9s", h->date, h->item, h->km) == 3)
-                ds.hist_n++;
-            line = strtok(NULL, "\n");
-        }
-    }
+    // Carrega histórico do SD
+    if (sd_ok)
+        reload_history(&ds);
 
-    static app_cb_t cb = {0};
+    // Prepara dataset inicial
+    update_dataset(&ds, &vd, &settings);
+
+    static app_cb_t cb;
     cb.vd = &vd;
     cb.s = &settings;
     cb.cal = &cal;
-
-    update_dataset(&ds, &vd, &settings);
+    cb.ds = &ds;
 
     static ui_ctx_t ctx;
     ui_init(&ctx, &ds, on_register, on_settings, on_interval, on_calibrate, &cb);
@@ -301,12 +370,11 @@ static void main_task(void *arg)
     {
         uint32_t now = (uint32_t)(esp_timer_get_time() / 1000);
 
-        // Calibração via flag (bloqueante, mas só quando solicitado)
         if (g_do_calibrate)
         {
             g_do_calibrate = false;
             calibration_run(&cal);
-            ctx.redraw = UI_REDRAW_FULL; // redesenha após calibrar
+            ctx.redraw = UI_REDRAW_FULL;
         }
 
         if (now - last_update >= OBD_POLL_MS)
@@ -332,7 +400,7 @@ static void main_task(void *arg)
     }
 }
 
-void app_main(void)
+extern "C" void app_main(void)
 {
     xTaskCreate(main_task, "main_task", 8192, NULL, 5, NULL);
 }

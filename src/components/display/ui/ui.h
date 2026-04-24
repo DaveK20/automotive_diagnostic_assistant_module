@@ -95,7 +95,7 @@ static const ui_region_t BACK_REGION = {0, 0, 70, UI_BAR_H};
 #define MAINT_ROW_H 24
 #define MAINT_ROW_X 2
 #define MAINT_ROW_W (MAINT_LIST_W - 4)
-#define MAINT_ROW_Y(i) (UI_CONT_Y + 2 + (i) * (MAINT_ROW_H + 2))
+#define MAINT_ROW_Y(i) ((uint16_t)(UI_CONT_Y + 2 + (i) * (MAINT_ROW_H + 2)))
 static const ui_region_t MAINT_REG_BTN = {140, 186, 176, 24};
 
 // Configurações > Veículo — linhas e área de edição
