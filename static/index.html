@@ -1,0 +1,2089 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+    <title>Console de Comando</title>
+    <style>
+        :root {
+            --bg: #2a2e16;
+            --panel: #3e4420;
+            --panel-d: #202310;
+            --border: #58602a;
+            --header: #1c1f0e;
+            --sel: #505828;
+            --text: #ffffff;
+            --dim: #a8b260;
+            --ok: #2db92d;
+            --warn: #dc8c00;
+            --due: #d21e1e;
+            --info: #3a8fc4;
+            --crit-bg: #300808;
+            --warn-bg: #301e05;
+            --info-bg: #081828;
+            --norec-bg: #1a1a06;
+            --nav-bg: #16190b;
+            --nav-act: #485024;
+            --btn: #343a1a;
+            --media: #1a2810;
+        }
+
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        html,
+        body {
+            height: 100%;
+            overflow: hidden;
+        }
+
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'Courier New', Courier, monospace;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        /* ── Top bar ─────────────────────────────────────────────────── */
+        #top-bar {
+            height: 42px;
+            background: var(--header);
+            border-bottom: 2px solid var(--border);
+            display: flex;
+            align-items: center;
+            padding: 0 10px;
+            flex-shrink: 0;
+            position: relative;
+            gap: 8px;
+        }
+
+        #back-btn {
+            font-size: 12px;
+            color: var(--dim);
+            cursor: pointer;
+            padding: 4px 8px;
+            border: 1px solid var(--border);
+            border-radius: 2px;
+            display: none;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+
+        #back-btn:hover {
+            color: var(--text);
+            border-color: var(--dim);
+        }
+
+        #screen-title {
+            position: absolute;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 12px;
+            font-weight: bold;
+            letter-spacing: 2px;
+            pointer-events: none;
+            white-space: nowrap;
+        }
+
+        #top-right {
+            margin-left: auto;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 11px;
+            flex-shrink: 0;
+        }
+
+        #conn-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--due);
+            transition: background .3s;
+        }
+
+        #conn-dot.on {
+            background: var(--ok);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+
+            0%,
+            100% {
+                opacity: 1
+            }
+
+            50% {
+                opacity: .5
+            }
+        }
+
+        #alert-badge {
+            font-size: 11px;
+            font-weight: bold;
+        }
+
+        /* ── Content ─────────────────────────────────────────────────── */
+        #content {
+            flex: 1;
+            overflow: hidden;
+            position: relative;
+        }
+
+        /* ── Bottom nav ──────────────────────────────────────────────── */
+        #nav-bar {
+            height: 50px;
+            background: var(--nav-bg);
+            border-top: 2px solid var(--border);
+            display: flex;
+            flex-shrink: 0;
+        }
+
+        .nav-btn {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            gap: 2px;
+            font-size: 9px;
+            letter-spacing: 1px;
+            color: var(--dim);
+            cursor: pointer;
+            border-right: 1px solid var(--border);
+            position: relative;
+            transition: background .15s;
+        }
+
+        .nav-btn:last-child {
+            border-right: none;
+        }
+
+        .nav-btn .nav-icon {
+            font-size: 16px;
+        }
+
+        .nav-btn.active {
+            background: var(--nav-act);
+            color: var(--text);
+        }
+
+        .nav-btn.active::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: var(--ok);
+        }
+
+        .nav-btn:hover:not(.active) {
+            background: #1e2210;
+        }
+
+        /* ── Screens ─────────────────────────────────────────────────── */
+        .screen {
+            display: none;
+            position: absolute;
+            inset: 0;
+            overflow-y: auto;
+            overflow-x: hidden;
+            padding: 8px;
+        }
+
+        .screen.active {
+            display: block;
+        }
+
+        #screen-home.active {
+            display: block;
+        }
+
+        /* ── HOME ────────────────────────────────────────────────────── */
+        #screen-home {
+            padding: 6px;
+        }
+
+        .home-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            grid-template-rows: 1fr 1fr 1fr;
+            gap: 5px;
+            height: 100%;
+        }
+
+        .home-btn {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 3px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+            transition: background .15s;
+        }
+
+        .home-btn::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+        }
+
+        .home-btn:nth-child(1)::before {
+            background: var(--ok);
+        }
+
+        .home-btn:nth-child(2)::before {
+            background: var(--warn);
+        }
+
+        .home-btn:nth-child(3)::before {
+            background: var(--info);
+        }
+
+        .home-btn:nth-child(4)::before {
+            background: var(--dim);
+        }
+
+        .home-btn:nth-child(5)::before {
+            background: var(--ok);
+        }
+
+        /* Botão CONFIG ocupa linha inteira */
+        .home-btn.full {
+            grid-column: 1 / -1;
+        }
+
+        .home-btn.full::before {
+            background: var(--border);
+        }
+
+        .home-btn:active {
+            background: var(--sel);
+        }
+
+        .hicon {
+            font-size: 28px;
+        }
+
+        .hlabel {
+            font-size: 11px;
+            letter-spacing: 1px;
+            text-align: center;
+            padding: 0 6px;
+        }
+
+        /* ── STATUS ──────────────────────────────────────────────────── */
+        .status-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 6px;
+            height: 100%;
+        }
+
+        .status-left {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 3px;
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 0;
+            overflow: hidden;
+        }
+
+        .status-right {
+            background: var(--panel-d);
+            border: 1px solid var(--border);
+            border-radius: 3px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 10px;
+            gap: 10px;
+        }
+
+        .stat-block {
+            padding: 7px 0;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .stat-block:last-of-type {
+            border-bottom: none;
+        }
+
+        .stat-label {
+            font-size: 10px;
+            color: var(--dim);
+            letter-spacing: 1px;
+        }
+
+        .stat-value {
+            font-size: 15px;
+            font-weight: bold;
+            margin-top: 2px;
+        }
+
+        .stat-footer {
+            margin-top: auto;
+            padding-top: 8px;
+            border-top: 1px solid var(--border);
+            font-size: 10px;
+            color: var(--dim);
+        }
+
+        .gauge-wrap {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+            width: 100%;
+        }
+
+        .gauge-pct {
+            font-size: 28px;
+            font-weight: bold;
+        }
+
+        .gauge-sublabel {
+            font-size: 9px;
+            color: var(--dim);
+            letter-spacing: 1px;
+            text-align: center;
+        }
+
+        .gauge-legend {
+            display: flex;
+            gap: 10px;
+            font-size: 9px;
+            margin-top: 4px;
+        }
+
+        .gl-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 3px;
+        }
+
+        /* ── MAINTENANCE ─────────────────────────────────────────────── */
+        .maint-wrap {
+            display: grid;
+            grid-template-columns: 145px 1fr;
+            gap: 6px;
+            height: 100%;
+        }
+
+        .maint-list {
+            background: var(--panel-d);
+            border: 1px solid var(--border);
+            border-radius: 3px;
+            overflow-y: auto;
+        }
+
+        .maint-row {
+            padding: 8px 8px 8px 12px;
+            border-bottom: 1px solid var(--border);
+            cursor: pointer;
+            border-left: 4px solid var(--border);
+            transition: background .1s;
+        }
+
+        .maint-row:active {
+            background: var(--sel) !important;
+        }
+
+        .maint-row.s-ok {
+            border-left-color: var(--ok);
+        }
+
+        .maint-row.s-warn {
+            border-left-color: var(--warn);
+            background: var(--warn-bg);
+        }
+
+        .maint-row.s-due {
+            border-left-color: var(--due);
+            background: var(--crit-bg);
+        }
+
+        .maint-row.s-norec {
+            border-left-color: var(--dim);
+            background: var(--norec-bg);
+        }
+
+        .maint-row.selected {
+            background: var(--sel) !important;
+        }
+
+        .mr-name {
+            font-size: 11px;
+            font-weight: bold;
+        }
+
+        .mr-sub {
+            font-size: 10px;
+            margin-top: 3px;
+        }
+
+        .maint-detail {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 3px;
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            overflow-y: auto;
+        }
+
+        .det-title {
+            background: var(--sel);
+            text-align: center;
+            padding: 6px;
+            font-size: 12px;
+            letter-spacing: 1px;
+            border-radius: 2px;
+            flex-shrink: 0;
+        }
+
+        .det-row {
+            display: flex;
+            justify-content: space-between;
+            font-size: 11px;
+            padding: 4px 0;
+            border-bottom: 1px solid rgba(88, 96, 42, .25);
+        }
+
+        .det-key {
+            color: var(--dim);
+        }
+
+        .prog-bar {
+            height: 7px;
+            background: var(--panel-d);
+            border: 1px solid var(--border);
+            border-radius: 2px;
+            overflow: hidden;
+            flex-shrink: 0;
+        }
+
+        .prog-fill {
+            height: 100%;
+            border-radius: 2px;
+            transition: width .5s;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 2px 7px;
+            font-size: 10px;
+            letter-spacing: 1px;
+            border-radius: 2px;
+            border: 1px solid;
+        }
+
+        .reg-btn {
+            margin-top: auto;
+            padding: 9px;
+            text-align: center;
+            border: 1px solid var(--ok);
+            color: var(--ok);
+            cursor: pointer;
+            font-size: 12px;
+            letter-spacing: 1px;
+            border-radius: 2px;
+            flex-shrink: 0;
+            transition: background .15s;
+        }
+
+        .reg-btn:hover {
+            background: rgba(45, 185, 45, .12);
+        }
+
+        /* ── HISTORY ─────────────────────────────────────────────────── */
+        .hist-tabs {
+            display: flex;
+            margin-bottom: 8px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .h-tab {
+            flex: 1;
+            padding: 8px;
+            text-align: center;
+            font-size: 11px;
+            letter-spacing: 1px;
+            cursor: pointer;
+            color: var(--dim);
+            background: var(--nav-bg);
+            border-right: 1px solid var(--border);
+            position: relative;
+            transition: background .15s;
+        }
+
+        .h-tab:last-child {
+            border-right: none;
+        }
+
+        .h-tab.active {
+            background: var(--nav-act);
+            color: var(--text);
+        }
+
+        .h-tab.active::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: var(--ok);
+        }
+
+        .hist-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 11px;
+        }
+
+        .hist-table th {
+            background: var(--panel-d);
+            color: var(--dim);
+            padding: 6px 8px;
+            text-align: left;
+            border: 1px solid var(--border);
+            letter-spacing: 1px;
+            font-size: 10px;
+        }
+
+        .hist-table td {
+            padding: 6px 8px;
+            border: 1px solid var(--border);
+        }
+
+        .hist-table tr:nth-child(odd) td {
+            background: var(--panel);
+        }
+
+        .hist-table tr:nth-child(even) td {
+            background: var(--panel-d);
+        }
+
+        .hist-table td:first-child {
+            border-left: 3px solid var(--ok);
+        }
+
+        .alert-card {
+            border-radius: 2px;
+            padding: 10px 12px;
+            margin-bottom: 6px;
+            font-size: 12px;
+            border: 1px solid;
+            border-left-width: 5px;
+        }
+
+        .alert-card.crit {
+            background: var(--crit-bg);
+            border-color: var(--due);
+        }
+
+        .alert-card.warn {
+            background: var(--warn-bg);
+            border-color: var(--warn);
+        }
+
+        .alert-card.info {
+            background: var(--info-bg);
+            border-color: var(--info);
+        }
+
+        .alert-level {
+            font-size: 10px;
+            letter-spacing: 1px;
+            margin-bottom: 4px;
+            font-weight: bold;
+        }
+
+        /* ── MULTIMEDIA ──────────────────────────────────────────────── */
+        #screen-multimedia {
+            background: var(--media);
+            display: none;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        #screen-multimedia.active {
+            display: flex;
+        }
+
+        .media-now-playing {
+            background: var(--panel-d);
+            border: 1px solid var(--border);
+            border-radius: 3px;
+            padding: 14px 16px;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .media-now-playing::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, var(--ok), var(--info), var(--ok));
+            animation: slide 3s linear infinite;
+        }
+
+        @keyframes slide {
+            from {
+                background-position: 0
+            }
+
+            to {
+                background-position: 200%
+            }
+        }
+
+        .media-status-dot {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--due);
+            margin-right: 6px;
+            vertical-align: middle;
+        }
+
+        .media-status-dot.playing {
+            background: var(--ok);
+            animation: pulse 1s infinite;
+        }
+
+        .media-track {
+            font-size: 15px;
+            font-weight: bold;
+            margin: 10px 0 4px;
+            color: var(--text);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .media-artist {
+            font-size: 12px;
+            color: var(--dim);
+            letter-spacing: 1px;
+        }
+
+        .media-source {
+            font-size: 10px;
+            color: var(--border);
+            margin-top: 6px;
+            letter-spacing: 1px;
+        }
+
+        .media-controls {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 6px;
+        }
+
+        .mc-btn {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 3px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 5px;
+            padding: 10px 4px;
+            cursor: pointer;
+            font-size: 9px;
+            letter-spacing: 1px;
+            color: var(--dim);
+            transition: background .1s, border-color .1s;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        .mc-btn .mc-icon {
+            font-size: 22px;
+        }
+
+        .mc-btn:active {
+            background: var(--sel);
+            border-color: var(--dim);
+        }
+
+        .mc-btn.active {
+            background: var(--nav-act);
+            color: var(--ok);
+            border-color: var(--ok);
+        }
+
+        .mc-btn.primary {
+            border-color: var(--ok);
+            color: var(--ok);
+        }
+
+        .mc-btn.primary:active {
+            background: rgba(45, 185, 45, .2);
+        }
+
+        .media-volume {
+            background: var(--panel-d);
+            border: 1px solid var(--border);
+            border-radius: 3px;
+            padding: 12px 14px;
+        }
+
+        .vol-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .vol-label {
+            font-size: 11px;
+            color: var(--dim);
+            letter-spacing: 1px;
+        }
+
+        .vol-value {
+            font-size: 18px;
+            font-weight: bold;
+            color: var(--ok);
+        }
+
+        .vol-bar-wrap {
+            height: 10px;
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 5px;
+            overflow: hidden;
+            margin-bottom: 10px;
+            position: relative;
+            cursor: pointer;
+        }
+
+        .vol-bar-fill {
+            height: 100%;
+            border-radius: 5px;
+            background: linear-gradient(90deg, var(--ok), #80e050);
+            transition: width .2s;
+        }
+
+        .vol-btns {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 6px;
+        }
+
+        .vol-btn {
+            padding: 9px;
+            text-align: center;
+            background: var(--btn);
+            border: 1px solid var(--border);
+            border-radius: 2px;
+            cursor: pointer;
+            font-size: 11px;
+            letter-spacing: 1px;
+            color: var(--dim);
+            font-family: inherit;
+            transition: background .1s;
+        }
+
+        .vol-btn:active {
+            background: var(--sel);
+        }
+
+        .vol-btn.muted {
+            color: var(--due);
+            border-color: var(--due);
+        }
+
+        .media-extras {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 6px;
+        }
+
+        .extra-card {
+            background: var(--panel-d);
+            border: 1px solid var(--border);
+            border-radius: 3px;
+            padding: 10px 12px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            cursor: pointer;
+            transition: background .1s, border-color .1s;
+        }
+
+        .extra-card.active {
+            background: var(--nav-act);
+            border-color: var(--ok);
+        }
+
+        .extra-card:active {
+            background: var(--sel);
+        }
+
+        .extra-icon {
+            font-size: 20px;
+        }
+
+        .extra-texts .extra-title {
+            font-size: 11px;
+            letter-spacing: 1px;
+            font-weight: bold;
+        }
+
+        .extra-texts .extra-sub {
+            font-size: 10px;
+            color: var(--dim);
+            margin-top: 2px;
+        }
+
+        .extra-card.active .extra-texts .extra-title {
+            color: var(--ok);
+        }
+
+        /* ── SETTINGS ────────────────────────────────────────────────── */
+        .cat-list {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .cat-item {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 3px;
+            padding: 14px;
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            cursor: pointer;
+            border-left: 5px solid;
+            transition: background .15s;
+        }
+
+        .cat-item:active {
+            background: var(--sel);
+        }
+
+        .cat-icon {
+            font-size: 22px;
+            flex-shrink: 0;
+        }
+
+        .cat-texts {
+            flex: 1;
+        }
+
+        .cat-title {
+            font-size: 13px;
+            letter-spacing: 1px;
+            font-weight: bold;
+        }
+
+        .cat-sub {
+            font-size: 10px;
+            color: var(--dim);
+            margin-top: 3px;
+        }
+
+        .cat-arrow {
+            font-size: 20px;
+            color: var(--dim);
+        }
+
+        /* ── Settings sub-rows ───────────────────────────────────────── */
+        .set-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 0;
+            border-bottom: 1px solid rgba(88, 96, 42, .3);
+            flex-wrap: wrap;
+        }
+
+        .set-label {
+            color: var(--dim);
+            font-size: 12px;
+            min-width: 110px;
+        }
+
+        .tog-group {
+            display: flex;
+            gap: 4px;
+            flex-wrap: wrap;
+        }
+
+        .tog-btn {
+            padding: 5px 12px;
+            font-size: 11px;
+            letter-spacing: 1px;
+            border: 1px solid var(--border);
+            background: var(--btn);
+            color: var(--dim);
+            cursor: pointer;
+            border-radius: 2px;
+            font-family: inherit;
+            transition: all .1s;
+        }
+
+        .tog-btn.active {
+            background: var(--sel);
+            color: var(--ok);
+            border-color: var(--ok);
+        }
+
+        .inc-grp {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .inc-btn {
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--btn);
+            border: 1px solid var(--border);
+            color: var(--dim);
+            cursor: pointer;
+            font-size: 18px;
+            border-radius: 2px;
+            font-family: inherit;
+            transition: background .1s;
+        }
+
+        .inc-btn:active {
+            background: var(--sel);
+        }
+
+        .inc-val {
+            min-width: 72px;
+            text-align: center;
+            background: var(--panel-d);
+            border: 1px solid var(--border);
+            padding: 5px 8px;
+            font-size: 12px;
+            color: var(--ok);
+            border-radius: 2px;
+        }
+
+        .color-preview {
+            width: 44px;
+            height: 28px;
+            border: 1px solid var(--border);
+            border-radius: 3px;
+        }
+
+        .rgb-grp {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+
+        .rgb-ch {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .rgb-num {
+            min-width: 28px;
+            text-align: center;
+            font-size: 12px;
+        }
+
+        .veh-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 12px;
+            background: var(--panel-d);
+            border: 1px solid var(--border);
+            border-radius: 2px;
+            margin-bottom: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: background .1s;
+        }
+
+        .veh-item.selected {
+            background: var(--sel);
+            border-color: var(--ok);
+        }
+
+        .veh-km {
+            color: var(--dim);
+            font-size: 11px;
+        }
+
+        .veh-item.selected .veh-km {
+            color: var(--ok);
+        }
+
+        .interval-editor {
+            background: var(--header);
+            border: 1px solid var(--border);
+            border-radius: 2px;
+            padding: 8px 6px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            margin-top: 4px;
+        }
+
+        .interval-val {
+            flex: 1;
+            text-align: center;
+            background: var(--panel-d);
+            border: 1px solid var(--ok);
+            padding: 7px 4px;
+            color: var(--ok);
+            font-size: 13px;
+            border-radius: 2px;
+            font-weight: bold;
+        }
+
+        .ival-btn {
+            padding: 6px 9px;
+            background: var(--btn);
+            border: 1px solid var(--border);
+            color: var(--dim);
+            cursor: pointer;
+            font-size: 11px;
+            border-radius: 2px;
+            font-family: inherit;
+            transition: background .1s;
+        }
+
+        .ival-btn:active {
+            background: var(--sel);
+        }
+
+        /* ── Register Form overlay ───────────────────────────────────── */
+        #form-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, .75);
+            z-index: 200;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #form-overlay.open {
+            display: flex;
+        }
+
+        .form-card {
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            width: 340px;
+            max-width: 96vw;
+            overflow: hidden;
+        }
+
+        .form-header {
+            background: var(--header);
+            border-bottom: 1px solid var(--border);
+            padding: 10px 16px;
+            font-size: 12px;
+            letter-spacing: 1px;
+            text-align: center;
+        }
+
+        .form-body {
+            padding: 14px 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .form-sec {
+            font-size: 10px;
+            color: var(--dim);
+            letter-spacing: 1px;
+        }
+
+        .form-ctrl {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .form-display {
+            flex: 1;
+            text-align: center;
+            background: var(--panel-d);
+            border: 1px solid var(--ok);
+            padding: 8px 6px;
+            color: var(--ok);
+            font-size: 15px;
+            font-weight: bold;
+            border-radius: 2px;
+        }
+
+        .form-s-btn {
+            padding: 7px 10px;
+            background: var(--btn);
+            border: 1px solid var(--border);
+            color: var(--dim);
+            cursor: pointer;
+            font-size: 11px;
+            border-radius: 2px;
+            font-family: inherit;
+            transition: background .1s;
+            white-space: nowrap;
+        }
+
+        .form-s-btn:active {
+            background: var(--sel);
+        }
+
+        .date-row {
+            display: flex;
+            gap: 8px;
+        }
+
+        .date-col {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .date-col-label {
+            font-size: 10px;
+            color: var(--dim);
+            text-align: center;
+            letter-spacing: 1px;
+        }
+
+        .date-ctrl {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .date-display {
+            flex: 1;
+            text-align: center;
+            background: var(--panel-d);
+            border: 1px solid var(--border);
+            padding: 7px 4px;
+            font-size: 16px;
+            font-weight: bold;
+            border-radius: 2px;
+        }
+
+        .form-actions {
+            display: flex;
+            gap: 8px;
+            padding-top: 6px;
+        }
+
+        .btn-confirm,
+        .btn-cancel {
+            flex: 1;
+            padding: 10px;
+            font-size: 12px;
+            letter-spacing: 1px;
+            cursor: pointer;
+            border-radius: 2px;
+            font-family: inherit;
+            font-weight: bold;
+            transition: background .15s;
+        }
+
+        .btn-confirm {
+            background: var(--panel-d);
+            border: 1px solid var(--ok);
+            color: var(--ok);
+        }
+
+        .btn-confirm:hover {
+            background: rgba(45, 185, 45, .12);
+        }
+
+        .btn-cancel {
+            background: var(--panel-d);
+            border: 1px solid var(--due);
+            color: var(--due);
+        }
+
+        .btn-cancel:hover {
+            background: rgba(210, 30, 30, .12);
+        }
+
+        /* ── Misc ────────────────────────────────────────────────────── */
+        .empty {
+            color: var(--dim);
+            font-size: 12px;
+            padding: 24px;
+            text-align: center;
+            letter-spacing: 1px;
+        }
+
+        ::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: var(--panel-d);
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 2px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- ── Top bar ───────────────────────────────────────────────── -->
+    <div id="top-bar">
+        <div id="back-btn" onclick="goBack()">◀ VOLTAR</div>
+        <span id="screen-title">CONSOLE DE COMANDO</span>
+        <div id="top-right">
+            <span id="conn-dot"></span>
+            <span id="alert-badge"></span>
+        </div>
+    </div>
+
+    <!-- ── Content ───────────────────────────────────────────────── -->
+    <div id="content">
+
+        <!-- HOME -->
+        <div id="screen-home" class="screen active">
+            <div class="home-grid">
+                <div class="home-btn" onclick="nav('status')">
+                    <div class="hicon">🚗</div>
+                    <div class="hlabel" style="color:var(--ok)">STATUS</div>
+                </div>
+                <div class="home-btn" onclick="nav('maintenance')">
+                    <div class="hicon">🔧</div>
+                    <div class="hlabel" style="color:var(--warn)">MANUTENÇÃO</div>
+                </div>
+                <div class="home-btn" onclick="nav('history')">
+                    <div class="hicon">📋</div>
+                    <div class="hlabel" style="color:var(--dim)">HISTÓRICO</div>
+                </div>
+                <div class="home-btn" onclick="nav('multimedia')">
+                    <div class="hicon">🎵</div>
+                    <div class="hlabel" style="color:var(--info)">MULTIMÍDIA</div>
+                </div>
+                <div class="home-btn full" onclick="nav('settings')">
+                    <div class="hicon">⚙️</div>
+                    <div class="hlabel" style="color:var(--dim)">CONFIGURAÇÕES</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- STATUS -->
+        <div id="screen-status" class="screen">
+            <div class="status-grid">
+                <div class="status-left">
+                    <div class="stat-block">
+                        <div class="stat-label">QUILOMETRAGEM</div>
+                        <div class="stat-value" id="st-km">---</div>
+                    </div>
+                    <div class="stat-block">
+                        <div class="stat-label">TEMP. MOTOR</div>
+                        <div class="stat-value" id="st-temp">---</div>
+                    </div>
+                    <div class="stat-block">
+                        <div class="stat-label">COMBUSTÍVEL</div>
+                        <div class="stat-value" id="st-fuel">---</div>
+                    </div>
+                    <div class="stat-block">
+                        <div class="stat-label">HORAS DE USO</div>
+                        <div class="stat-value" id="st-hours">---</div>
+                    </div>
+                    <div class="stat-footer" id="st-rpmspd">---</div>
+                </div>
+                <div class="status-right">
+                    <div class="gauge-wrap">
+                        <svg id="gauge-svg" width="140" height="140" viewBox="0 0 150 150">
+                            <path id="g-bg" fill="none" stroke="#202310" stroke-width="14" stroke-linecap="round" />
+                            <path id="g-ok" fill="none" stroke="#2db92d" stroke-width="14" stroke-linecap="round" />
+                            <path id="g-warn" fill="none" stroke="#dc8c00" stroke-width="14" stroke-linecap="round" />
+                            <path id="g-due" fill="none" stroke="#d21e1e" stroke-width="14" stroke-linecap="round" />
+                            <line id="g-needle" stroke="white" stroke-width="2.5" stroke-linecap="round" />
+                            <circle cx="75" cy="75" r="5" fill="#a8b260" />
+                        </svg>
+                        <div class="gauge-pct" id="st-readiness">---%</div>
+                        <div class="gauge-sublabel">PRONTO PARA SERVIÇO</div>
+                        <div class="gauge-legend" id="gauge-legend"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- MAINTENANCE -->
+        <div id="screen-maintenance" class="screen">
+            <div class="maint-wrap">
+                <div class="maint-list" id="maint-list"></div>
+                <div class="maint-detail" id="maint-detail">
+                    <div class="empty">Selecione um item</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- HISTORY -->
+        <div id="screen-history" class="screen">
+            <div class="hist-tabs">
+                <div class="h-tab active" id="ht-hist" onclick="setHistTab(0)">HISTÓRICO</div>
+                <div class="h-tab" id="ht-alert" onclick="setHistTab(1)">
+                    ALERTAS <span id="alert-count-badge"></span>
+                </div>
+            </div>
+            <div id="hist-body"></div>
+            <div id="alert-body" style="display:none"></div>
+        </div>
+
+        <!-- MULTIMEDIA -->
+        <div id="screen-multimedia" class="screen">
+
+            <!-- Now Playing -->
+            <div class="media-now-playing">
+                <div style="font-size:10px;letter-spacing:1px;color:var(--dim)">
+                    <span class="media-status-dot" id="m-dot"></span>
+                    <span id="m-status-txt">PARADO</span>
+                    &nbsp;·&nbsp; BLUETOOTH
+                </div>
+                <div class="media-track" id="m-track">Conecte um dispositivo BT</div>
+                <div class="media-artist" id="m-artist">---</div>
+                <div class="media-source" id="m-source">playerctl · pactl</div>
+            </div>
+
+            <!-- Controles principais -->
+            <div class="media-controls">
+                <div class="mc-btn" id="mc-shuf" onclick="mediaCmd('shuffle')">
+                    <div class="mc-icon">🔀</div>
+                    <div>ALEAT.</div>
+                </div>
+                <div class="mc-btn" onclick="mediaCmd('prev')">
+                    <div class="mc-icon">⏮</div>
+                    <div>ANTERIOR</div>
+                </div>
+                <div class="mc-btn primary" id="mc-play" onclick="mediaCmd('play_pause')">
+                    <div class="mc-icon" id="mc-play-icon">▶</div>
+                    <div id="mc-play-txt">PLAY</div>
+                </div>
+                <div class="mc-btn" onclick="mediaCmd('next')">
+                    <div class="mc-icon">⏭</div>
+                    <div>PRÓXIMA</div>
+                </div>
+                <div class="mc-btn" id="mc-rep" onclick="mediaCmd('repeat')">
+                    <div class="mc-icon">🔁</div>
+                    <div>REPET.</div>
+                </div>
+            </div>
+
+            <!-- Volume -->
+            <div class="media-volume">
+                <div class="vol-header">
+                    <span class="vol-label">🔊 VOLUME</span>
+                    <span class="vol-value" id="m-vol">65%</span>
+                </div>
+                <div class="vol-bar-wrap" id="vol-bar-wrap" onclick="volClick(event)">
+                    <div class="vol-bar-fill" id="m-vol-bar" style="width:65%"></div>
+                </div>
+                <div class="vol-btns">
+                    <div class="vol-btn" onclick="mediaCmd('vol_down')">− VOLUME</div>
+                    <div class="vol-btn" id="mute-btn" onclick="mediaCmd('mute')">🔇 MUDO</div>
+                    <div class="vol-btn" onclick="mediaCmd('vol_up')">+ VOLUME</div>
+                </div>
+            </div>
+
+            <!-- Extras -->
+            <div class="media-extras">
+                <div class="extra-card" id="ex-shuf" onclick="mediaCmd('shuffle')">
+                    <div class="extra-icon">🔀</div>
+                    <div class="extra-texts">
+                        <div class="extra-title">ALEATÓRIO</div>
+                        <div class="extra-sub" id="ex-shuf-sub">Desativado</div>
+                    </div>
+                </div>
+                <div class="extra-card" id="ex-rep" onclick="mediaCmd('repeat')">
+                    <div class="extra-icon">🔁</div>
+                    <div class="extra-texts">
+                        <div class="extra-title">REPETIR</div>
+                        <div class="extra-sub" id="ex-rep-sub">Desativado</div>
+                    </div>
+                </div>
+            </div>
+
+        </div><!-- /screen-multimedia -->
+
+        <!-- SETTINGS -->
+        <div id="screen-settings" class="screen">
+            <div class="cat-list">
+                <div class="cat-item" style="border-left-color:var(--dim)" onclick="nav('set-general')">
+                    <div class="cat-icon">⚙️</div>
+                    <div class="cat-texts">
+                        <div class="cat-title" style="color:var(--dim)">GERAL</div>
+                        <div class="cat-sub">Unidade, brilho, tela</div>
+                    </div>
+                    <div class="cat-arrow">›</div>
+                </div>
+                <div class="cat-item" style="border-left-color:var(--warn)" onclick="nav('set-vehicle')">
+                    <div class="cat-icon">🔧</div>
+                    <div class="cat-texts">
+                        <div class="cat-title" style="color:var(--warn)">VEÍCULO / MANUT.</div>
+                        <div class="cat-sub">Intervalos de manutenção</div>
+                    </div>
+                    <div class="cat-arrow">›</div>
+                </div>
+                <div class="cat-item" style="border-left-color:var(--due)" onclick="nav('set-alerts')">
+                    <div class="cat-icon">⚠️</div>
+                    <div class="cat-texts">
+                        <div class="cat-title" style="color:var(--due)">ALERTAS</div>
+                        <div class="cat-sub">Som, tipo de notificação</div>
+                    </div>
+                    <div class="cat-arrow">›</div>
+                </div>
+                <div class="cat-item" style="border-left-color:var(--ok)" onclick="nav('set-leds')">
+                    <div class="cat-icon">💡</div>
+                    <div class="cat-texts">
+                        <div class="cat-title" style="color:var(--ok)">LEDs</div>
+                        <div class="cat-sub">Modo, cor, efeitos</div>
+                    </div>
+                    <div class="cat-arrow">›</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- SET GENERAL -->
+        <div id="screen-set-general" class="screen">
+            <div class="set-row">
+                <span class="set-label">Unidade:</span>
+                <div class="tog-group">
+                    <button class="tog-btn" id="u-km" onclick="setSetting('units',0)">KM</button>
+                    <button class="tog-btn" id="u-mi" onclick="setSetting('units',1)">MILHAS</button>
+                </div>
+            </div>
+            <div class="set-row">
+                <span class="set-label">Brilho tela:</span>
+                <div class="inc-grp">
+                    <button class="inc-btn" onclick="adjSet('brightness',-10,20,100)">−</button>
+                    <div class="inc-val" id="v-brightness">80%</div>
+                    <button class="inc-btn" onclick="adjSet('brightness',10,20,100)">+</button>
+                </div>
+            </div>
+            <div class="set-row">
+                <span class="set-label">Tela desligar:</span>
+                <div class="inc-grp">
+                    <button class="inc-btn" onclick="cycleOff(-1)">−</button>
+                    <div class="inc-val" id="v-screenoff">NUNCA</div>
+                    <button class="inc-btn" onclick="cycleOff(1)">+</button>
+                </div>
+            </div>
+            <div class="set-row">
+                <span class="set-label">Calibrar:</span>
+                <button class="tog-btn" style="color:var(--warn);border-color:var(--warn)"
+                    onclick="alert('Calibração não aplicável na versão web.')">INICIAR CALIBRAÇÃO</button>
+            </div>
+        </div>
+
+        <!-- SET VEHICLE -->
+        <div id="screen-set-vehicle" class="screen">
+            <div id="veh-list"></div>
+            <div class="interval-editor">
+                <button class="ival-btn" onclick="adjInterval(-10000)">-10k</button>
+                <button class="ival-btn" onclick="adjInterval(-1000)">-1k</button>
+                <div class="interval-val" id="v-interval">---</div>
+                <button class="ival-btn" onclick="adjInterval(1000)">+1k</button>
+                <button class="ival-btn" onclick="adjInterval(10000)">+10k</button>
+            </div>
+        </div>
+
+        <!-- SET ALERTS -->
+        <div id="screen-set-alerts" class="screen">
+            <div class="set-row">
+                <span class="set-label">Som de alerta:</span>
+                <div class="tog-group">
+                    <button class="tog-btn" id="as-on" onclick="setSetting('alert_sound',true)">SIM</button>
+                    <button class="tog-btn" id="as-off" onclick="setSetting('alert_sound',false)">NÃO</button>
+                </div>
+            </div>
+            <div class="set-row">
+                <span class="set-label">Tipo de alerta:</span>
+                <div class="tog-group">
+                    <button class="tog-btn" id="at-0" onclick="setSetting('alert_type',0)">VISUAL</button>
+                    <button class="tog-btn" id="at-1" onclick="setSetting('alert_type',1)">SONORO</button>
+                    <button class="tog-btn" id="at-2" onclick="setSetting('alert_type',2)">AMBOS</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- SET LEDS -->
+        <div id="screen-set-leds" class="screen">
+            <div class="set-row">
+                <span class="set-label">LEDs:</span>
+                <div class="tog-group">
+                    <button class="tog-btn" id="led-on" onclick="setSetting('led_enabled',true)">LIGAR</button>
+                    <button class="tog-btn" id="led-off" onclick="setSetting('led_enabled',false)">DESLIGAR</button>
+                </div>
+            </div>
+            <div class="set-row">
+                <span class="set-label">Modo:</span>
+                <div class="tog-group">
+                    <button class="tog-btn" id="lm-0" onclick="setSetting('led_mode',0)">FIXO</button>
+                    <button class="tog-btn" id="lm-1" onclick="setSetting('led_mode',1)">RESP.</button>
+                    <button class="tog-btn" id="lm-2" onclick="setSetting('led_mode',2)">REAT.</button>
+                    <button class="tog-btn" id="lm-3" onclick="setSetting('led_mode',3)">CARRO</button>
+                </div>
+            </div>
+            <div class="set-row">
+                <span class="set-label">Brilho LED:</span>
+                <div class="inc-grp">
+                    <button class="inc-btn" onclick="adjSet('led_brightness',-10,0,100)">−</button>
+                    <div class="inc-val" id="v-led-br">70%</div>
+                    <button class="inc-btn" onclick="adjSet('led_brightness',10,0,100)">+</button>
+                </div>
+            </div>
+            <div class="set-row">
+                <span class="set-label">Velocidade:</span>
+                <div class="inc-grp">
+                    <button class="inc-btn" onclick="adjSet('led_speed',-10,10,100)">−</button>
+                    <div class="inc-val" id="v-led-sp">50%</div>
+                    <button class="inc-btn" onclick="adjSet('led_speed',10,10,100)">+</button>
+                </div>
+            </div>
+            <div class="set-row" style="flex-direction:column;align-items:flex-start;gap:10px">
+                <div style="display:flex;align-items:center;gap:12px;width:100%">
+                    <span class="set-label">Cor RGB:</span>
+                    <div class="color-preview" id="led-preview"></div>
+                </div>
+                <div class="rgb-grp">
+                    <div class="rgb-ch">
+                        <span style="color:#e05050;font-size:11px;font-weight:bold">R</span>
+                        <button class="inc-btn" onclick="adjSet('led_r',-16,0,255)">−</button>
+                        <span class="rgb-num" id="v-led-r">0</span>
+                        <button class="inc-btn" onclick="adjSet('led_r',16,0,255)">+</button>
+                    </div>
+                    <div class="rgb-ch">
+                        <span style="color:#50e050;font-size:11px;font-weight:bold">G</span>
+                        <button class="inc-btn" onclick="adjSet('led_g',-16,0,255)">−</button>
+                        <span class="rgb-num" id="v-led-g">200</span>
+                        <button class="inc-btn" onclick="adjSet('led_g',16,0,255)">+</button>
+                    </div>
+                    <div class="rgb-ch">
+                        <span style="color:#5080e0;font-size:11px;font-weight:bold">B</span>
+                        <button class="inc-btn" onclick="adjSet('led_b',-16,0,255)">−</button>
+                        <span class="rgb-num" id="v-led-b">50</span>
+                        <button class="inc-btn" onclick="adjSet('led_b',16,0,255)">+</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div><!-- #content -->
+
+    <!-- ── Bottom nav ────────────────────────────────────────────── -->
+    <div id="nav-bar" style="display:none">
+        <div class="nav-btn" id="nav-status" onclick="nav('status')">
+            <div class="nav-icon">🚗</div>
+            <div>STATUS</div>
+        </div>
+        <div class="nav-btn" id="nav-maintenance" onclick="nav('maintenance')">
+            <div class="nav-icon">🔧</div>
+            <div>MANUT.</div>
+        </div>
+        <div class="nav-btn" id="nav-history" onclick="nav('history')">
+            <div class="nav-icon">📋</div>
+            <div>HIST.</div>
+        </div>
+        <div class="nav-btn" id="nav-multimedia" onclick="nav('multimedia')">
+            <div class="nav-icon">🎵</div>
+            <div>MÍDIA</div>
+        </div>
+        <div class="nav-btn" id="nav-settings" onclick="nav('settings')">
+            <div class="nav-icon">⚙️</div>
+            <div>CONFIG.</div>
+        </div>
+    </div>
+
+    <!-- ── Register Form ─────────────────────────────────────────── -->
+    <div id="form-overlay">
+        <div class="form-card">
+            <div class="form-header" id="form-title">REGISTRAR MANUTENÇÃO</div>
+            <div class="form-body">
+                <div class="form-sec">QUILOMETRAGEM</div>
+                <div class="form-ctrl">
+                    <button class="form-s-btn" onclick="adjKm(-10000)">-10k</button>
+                    <button class="form-s-btn" onclick="adjKm(-1000)">-1k</button>
+                    <div class="form-display" id="f-km">0 KM</div>
+                    <button class="form-s-btn" onclick="adjKm(1000)">+1k</button>
+                    <button class="form-s-btn" onclick="adjKm(10000)">+10k</button>
+                </div>
+                <div class="form-sec">DATA</div>
+                <div class="date-row">
+                    <div class="date-col">
+                        <div class="date-col-label">DIA</div>
+                        <div class="date-ctrl">
+                            <button class="form-s-btn" onclick="adjDay(-1)">−</button>
+                            <div class="date-display" id="f-day">01</div>
+                            <button class="form-s-btn" onclick="adjDay(1)">+</button>
+                        </div>
+                    </div>
+                    <div class="date-col">
+                        <div class="date-col-label">MÊS</div>
+                        <div class="date-ctrl">
+                            <button class="form-s-btn" onclick="adjMon(-1)">−</button>
+                            <div class="date-display" id="f-mon">01</div>
+                            <button class="form-s-btn" onclick="adjMon(1)">+</button>
+                        </div>
+                    </div>
+                    <div class="date-col">
+                        <div class="date-col-label">ANO</div>
+                        <div class="date-ctrl">
+                            <button class="form-s-btn" onclick="adjYr(-1)">−</button>
+                            <div class="date-display" id="f-yr">2026</div>
+                            <button class="form-s-btn" onclick="adjYr(1)">+</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="form-actions">
+                    <button class="btn-confirm" onclick="confirmReg()">✓ CONFIRMAR</button>
+                    <button class="btn-cancel" onclick="closeForm()">✕ CANCELAR</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ── State ─────────────────────────────────────────────────────
+        let S = null;
+        let curScr = 'home';
+        let prevScr = null;
+        let maintSel = 0;
+        let histTab = 0;
+        let vehSel = 0;
+        let fKm = 0, fDay = 1, fMon = 1, fYr = 2026, fIdx = 0;
+
+        const TITLES = {
+            home: 'CONSOLE DE COMANDO',
+            status: 'STATUS DO VEÍCULO',
+            maintenance: 'MANUTENÇÃO',
+            history: 'HISTÓRICO / ALERTAS',
+            multimedia: 'MULTIMÍDIA',
+            settings: 'CONFIGURAÇÕES',
+            'set-general': 'GERAL',
+            'set-vehicle': 'VEÍCULO / MANUT.',
+            'set-alerts': 'ALERTAS',
+            'set-leds': 'LEDs',
+        };
+        const BACK_TO = {
+            'set-general': 'settings',
+            'set-vehicle': 'settings',
+            'set-alerts': 'settings',
+            'set-leds': 'settings',
+        };
+        const NAV_KEY = {
+            status: 'nav-status', maintenance: 'nav-maintenance',
+            history: 'nav-history', multimedia: 'nav-multimedia', settings: 'nav-settings',
+        };
+
+        // ── WebSocket ─────────────────────────────────────────────────
+        let ws = null;
+        function connect() {
+            const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+            ws = new WebSocket(`${proto}//${location.host}/ws`);
+            ws.onopen = () => el('conn-dot').classList.add('on');
+            ws.onclose = () => { el('conn-dot').classList.remove('on'); setTimeout(connect, 2000); };
+            ws.onmessage = e => { S = JSON.parse(e.data); render(); };
+        }
+        function send(obj) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj)); }
+
+        // ── Helpers ───────────────────────────────────────────────────
+        const el = id => document.getElementById(id);
+        const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+        const pad2 = n => String(n).padStart(2, '0');
+
+        function statusColor(s) {
+            return { OK: 'var(--ok)', WARN: 'var(--warn)', DUE: 'var(--due)', NO_RECORD: 'var(--dim)' }[s] || 'var(--dim)';
+        }
+        function statusClass(s) {
+            return { OK: 's-ok', WARN: 's-warn', DUE: 's-due', NO_RECORD: 's-norec' }[s] || '';
+        }
+        function statusLabel(s) {
+            return { OK: 'OK', WARN: 'ATENÇÃO', DUE: 'VENCIDA', NO_RECORD: 'SEM REGISTRO' }[s] || s;
+        }
+
+        // ── Navigation ────────────────────────────────────────────────
+        function nav(scr) {
+            prevScr = curScr;
+            curScr = scr;
+
+            document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+            el(`screen-${scr}`).classList.add('active');
+            el('screen-title').textContent = TITLES[scr] || scr;
+
+            const back = el('back-btn');
+            back.style.display = BACK_TO[scr] ? 'block' : 'none';
+
+            const isHome = scr === 'home';
+            el('nav-bar').style.display = isHome ? 'none' : 'flex';
+
+            document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+            const navKey = NAV_KEY[scr] || (scr.startsWith('set-') ? 'nav-settings' : null);
+            if (navKey) el(navKey).classList.add('active');
+
+            if (S) render();
+        }
+        function goBack() { const d = BACK_TO[curScr]; if (d) nav(d); }
+
+        // ── Render ────────────────────────────────────────────────────
+        function render() {
+            if (!S) return;
+            renderStatus();
+            renderMaintenance();
+            renderHistory();
+            renderSettings();
+            renderMultimedia();
+            renderAlertBadge();
+        }
+
+        // ── Status ────────────────────────────────────────────────────
+        function renderStatus() {
+            const o = S.obd;
+            const tc = o.temp_c >= 100 ? 'var(--due)' : o.temp_c >= 90 ? 'var(--warn)' : 'var(--ok)';
+            const fc = o.fuel_pct < 15 ? 'var(--due)' : o.fuel_pct < 30 ? 'var(--warn)' : 'var(--ok)';
+
+            setText('st-km', o.total_km.toLocaleString('pt-BR') + ' KM');
+            setHTML('st-temp', `<span style="color:${tc}">${o.temp_c}°C ${o.temp_c >= 100 ? '⚠ ALTO' : 'NORMAL'}</span>`);
+            setHTML('st-fuel', `<span style="color:${fc}">${o.fuel_pct}%</span>`);
+            setText('st-hours', `${o.engine_hours} H`);
+            setText('st-rpmspd', `RPM: ${o.rpm} | VEL: ${o.speed_kmh} km/h`);
+
+            const pct = o.readiness_pct;
+            setText('st-readiness', pct + '%');
+            el('st-readiness').style.color = pct >= 70 ? 'var(--ok)' : pct >= 40 ? 'var(--warn)' : 'var(--due)';
+            drawGauge(pct);
+
+            // Legenda do gauge
+            const counts = { ok: 0, warn: 0, due: 0, norec: 0 };
+            if (S.maint) S.maint.forEach(m => {
+                if (m.status === 'OK') counts.ok++;
+                else if (m.status === 'WARN') counts.warn++;
+                else if (m.status === 'DUE') counts.due++;
+                else counts.norec++;
+            });
+            el('gauge-legend').innerHTML = [
+                counts.ok ? `<span><span class="gl-dot" style="background:var(--ok)"></span>${counts.ok} OK</span>` : '',
+                counts.warn ? `<span><span class="gl-dot" style="background:var(--warn)"></span>${counts.warn} AT.</span>` : '',
+                counts.due ? `<span><span class="gl-dot" style="background:var(--due)"></span>${counts.due} VENC.</span>` : '',
+                counts.norec ? `<span><span class="gl-dot" style="background:var(--dim)"></span>${counts.norec} S/REG</span>` : '',
+            ].join('');
+        }
+
+        // ── Gauge SVG ─────────────────────────────────────────────────
+        function arcD(cx, cy, r, a0, a1) {
+            if (a1 <= a0) return 'M 0,0';
+            const rad = a => (a - 90) * Math.PI / 180;
+            const p = a => `${cx + r * Math.cos(rad(a))},${cy + r * Math.sin(rad(a))}`;
+            return `M ${p(a0)} A ${r} ${r} 0 ${(a1 - a0) > 180 ? 1 : 0} 1 ${p(a1)}`;
+        }
+        function drawGauge(pct) {
+            const cx = 75, cy = 75, r = 58, a0 = 135, span = 270;
+            const ae = a0 + span;
+            const t1 = a0 + span * 0.33, t2 = a0 + span * 0.66;
+            const filled = a0 + pct * span / 100;
+
+            el('g-bg').setAttribute('d', arcD(cx, cy, r, a0, ae));
+            el('g-ok').setAttribute('d', pct > 0 ? arcD(cx, cy, r, a0, Math.min(filled, t1)) : 'M 0,0');
+            el('g-warn').setAttribute('d', pct > 33 ? arcD(cx, cy, r, t1, Math.min(filled, t2)) : 'M 0,0');
+            el('g-due').setAttribute('d', pct > 66 ? arcD(cx, cy, r, t2, Math.min(filled, ae)) : 'M 0,0');
+
+            const na = (filled - 90) * Math.PI / 180;
+            const [x1, y1] = [cx + 10 * Math.cos(na), cy + 10 * Math.sin(na)];
+            const [x2, y2] = [cx + (r - 8) * Math.cos(na), cy + (r - 8) * Math.sin(na)];
+            const n = el('g-needle');
+            n.setAttribute('x1', x1); n.setAttribute('y1', y1);
+            n.setAttribute('x2', x2); n.setAttribute('y2', y2);
+        }
+
+        // ── Maintenance ───────────────────────────────────────────────
+        function renderMaintenance() {
+            if (!S) return;
+            el('maint-list').innerHTML = S.maint.map((m, i) => {
+                const c = statusColor(m.status);
+                const sub = m.status === 'NO_RECORD' ? 'sem registro'
+                    : m.km_remaining <= 0 ? `vencida ${Math.abs(m.km_remaining).toLocaleString('pt-BR')} km`
+                        : `${m.km_remaining.toLocaleString('pt-BR')} km restantes`;
+                return `<div class="maint-row ${statusClass(m.status)} ${i === maintSel ? 'selected' : ''}"
+                 onclick="selMaint(${i})">
+      <div class="mr-name">${m.name}</div>
+      <div class="mr-sub" style="color:${c}">${sub}</div>
+    </div>`;
+            }).join('');
+
+            const m = S.maint[maintSel];
+            if (!m) return;
+            const c = statusColor(m.status);
+            const lbl = statusLabel(m.status);
+            const kmTxt = m.status === 'NO_RECORD' ? 'SEM REGISTRO'
+                : m.km_remaining <= 0 ? `VENC. ${Math.abs(m.km_remaining).toLocaleString('pt-BR')} KM`
+                    : `FALT. ${m.km_remaining.toLocaleString('pt-BR')} KM`;
+
+            el('maint-detail').innerHTML = `
+    <div class="det-title">${m.name}</div>
+    <div class="det-row"><span class="det-key">ÚLTIMA TROCA:</span><span>${m.last_date}</span></div>
+    <div class="det-row"><span class="det-key">KM NA TROCA:</span><span>${m.last_km.toLocaleString('pt-BR')} KM</span></div>
+    <div class="det-row"><span class="det-key">INTERVALO:</span><span>${m.interval_km.toLocaleString('pt-BR')} KM</span></div>
+    <div class="det-row"><span class="det-key">PRÓXIMA EM:</span><span style="color:${c}">${m.next_km.toLocaleString('pt-BR')} KM</span></div>
+    <div class="det-row"><span class="det-key">SITUAÇÃO:</span><span style="color:${c}">${kmTxt}</span></div>
+    <div class="det-row"><span class="det-key">PROGRESSO:</span><span style="color:${c}">${m.progress_pct}%</span></div>
+    <div class="prog-bar"><div class="prog-fill" style="width:${m.progress_pct}%;background:${c}"></div></div>
+    <span class="badge" style="color:${c};border-color:${c};background:rgba(0,0,0,.4)">${lbl}</span>
+    <div class="reg-btn" onclick="openForm(${maintSel})">⊕ REGISTRAR TROCA</div>
+  `;
+        }
+        function selMaint(i) { maintSel = i; renderMaintenance(); }
+
+        // ── History / Alerts ──────────────────────────────────────────
+        function renderHistory() {
+            if (!S) return;
+
+            el('hist-body').innerHTML = S.history.length === 0
+                ? '<div class="empty">Nenhum registro salvo.</div>'
+                : `<table class="hist-table">
+        <thead><tr><th>DATA</th><th>ITEM</th><th>KM</th><th>STATUS</th></tr></thead>
+        <tbody>${S.history.map(h =>
+                    `<tr><td>${h.date}</td><td>${h.item}</td><td>${h.km} KM</td>
+               <td style="color:var(--ok)">✓ OK</td></tr>`
+                ).join('')}</tbody></table>`;
+
+            el('alert-body').innerHTML = S.alerts.length === 0
+                ? '<div class="empty">Nenhum alerta ativo. ✓</div>'
+                : S.alerts.map(a => {
+                    const cls = a.level === 'CRITICAL' ? 'crit' : a.level === 'WARNING' ? 'warn' : 'info';
+                    const icon = a.level === 'CRITICAL' ? '⚠ CRÍTICO' : a.level === 'WARNING' ? '△ ATENÇÃO' : 'ℹ SEM REGISTRO';
+                    const col = a.level === 'CRITICAL' ? 'var(--due)' : a.level === 'WARNING' ? 'var(--warn)' : 'var(--info)';
+                    return `<div class="alert-card ${cls}">
+          <div class="alert-level" style="color:${col}">${icon}</div>
+          <div>${a.text}</div>
+        </div>`;
+                }).join('');
+        }
+
+        function setHistTab(t) {
+            histTab = t;
+            el('ht-hist').classList.toggle('active', t === 0);
+            el('ht-alert').classList.toggle('active', t === 1);
+            el('hist-body').style.display = t === 0 ? '' : 'none';
+            el('alert-body').style.display = t === 1 ? '' : 'none';
+        }
+
+        // ── Multimedia ────────────────────────────────────────────────
+        function renderMultimedia() {
+            if (!S || !S.media) return;
+            const m = S.media;
+
+            // Status dot e texto
+            const dot = el('m-dot');
+            dot.classList.toggle('playing', m.playing);
+            setText('m-status-txt', m.playing ? 'REPRODUZINDO' : 'PARADO');
+
+            // Faixa e artista
+            setText('m-track', m.track || 'Conecte um dispositivo BT');
+            setText('m-artist', m.artist || '---');
+
+            // Botão play
+            el('mc-play-icon').textContent = m.playing ? '⏸' : '▶';
+            setText('mc-play-txt', m.playing ? 'PAUSA' : 'PLAY');
+
+            // Volume
+            const vol = m.muted ? 0 : m.volume;
+            setText('m-vol', m.muted ? 'MUDO' : `${m.volume}%`);
+            el('m-vol-bar').style.width = vol + '%';
+            el('m-vol-bar').style.background = m.muted
+                ? 'var(--due)'
+                : 'linear-gradient(90deg, var(--ok), #80e050)';
+            el('mute-btn').classList.toggle('muted', m.muted);
+            el('mute-btn').textContent = m.muted ? '🔇 DESMUTAR' : '🔇 MUDO';
+
+            // Shuffle e repeat
+            el('mc-shuf').classList.toggle('active', m.shuffle);
+            el('mc-rep').classList.toggle('active', m.repeat);
+            el('ex-shuf').classList.toggle('active', m.shuffle);
+            el('ex-rep').classList.toggle('active', m.repeat);
+            setText('ex-shuf-sub', m.shuffle ? 'Ativado' : 'Desativado');
+            setText('ex-rep-sub', m.repeat ? 'Ativado' : 'Desativado');
+        }
+
+        function mediaCmd(cmd) {
+            // Feedback otimista imediato
+            if (S && S.media) {
+                if (cmd === 'play_pause') S.media.playing = !S.media.playing;
+                if (cmd === 'mute') S.media.muted = !S.media.muted;
+                if (cmd === 'shuffle') S.media.shuffle = !S.media.shuffle;
+                if (cmd === 'repeat') S.media.repeat = !S.media.repeat;
+                if (cmd === 'vol_up') S.media.volume = Math.min(100, S.media.volume + 5);
+                if (cmd === 'vol_down') S.media.volume = Math.max(0, S.media.volume - 5);
+                renderMultimedia();
+            }
+            send({ action: 'media', cmd });
+        }
+
+        function volClick(e) {
+            const rect = el('vol-bar-wrap').getBoundingClientRect();
+            const pct = Math.round((e.clientX - rect.left) / rect.width * 100);
+            const vol = clamp(pct, 0, 100);
+            if (S && S.media) {
+                S.media.volume = vol;
+                S.media.muted = false;
+                renderMultimedia();
+            }
+            send({ action: 'media', cmd: 'vol_set', value: vol });
+        }
+
+        // ── Alert badge ───────────────────────────────────────────────
+        function renderAlertBadge() {
+            if (!S) return;
+            const crit = S.alerts.filter(a => a.level === 'CRITICAL').length;
+            const total = S.alerts.length;
+            if (total > 0) {
+                el('alert-badge').textContent = `⚠ ${total}`;
+                el('alert-badge').style.color = crit > 0 ? 'var(--due)' : 'var(--warn)';
+            } else {
+                el('alert-badge').textContent = '';
+            }
+            // Badge na aba de alertas
+            const badge = el('alert-count-badge');
+            if (badge) badge.textContent = total > 0 ? ` (${total})` : '';
+        }
+
+        // ── Settings ──────────────────────────────────────────────────
+        function renderSettings() {
+            if (!S) return;
+            const s = S.settings;
+            tog2('u-km', 'u-mi', s.units === 0);
+            setText('v-brightness', s.brightness + '%');
+            const offL = ['NUNCA', '30s', '1 min', '2 min', '5 min'];
+            const offV = [0, 30, 60, 120, 300];
+            const oi = offV.indexOf(s.screen_off_s);
+            setText('v-screenoff', offL[oi >= 0 ? oi : 0]);
+            tog2('as-on', 'as-off', s.alert_sound);
+            ['at-0', 'at-1', 'at-2'].forEach((id, i) => el(id).classList.toggle('active', s.alert_type === i));
+            tog2('led-on', 'led-off', s.led_enabled);
+            ['lm-0', 'lm-1', 'lm-2', 'lm-3'].forEach((id, i) => el(id).classList.toggle('active', s.led_mode === i));
+            setText('v-led-br', s.led_brightness + '%');
+            setText('v-led-sp', s.led_speed + '%');
+            setText('v-led-r', s.led_r); setText('v-led-g', s.led_g); setText('v-led-b', s.led_b);
+            el('led-preview').style.background = `rgb(${s.led_r},${s.led_g},${s.led_b})`;
+            el('veh-list').innerHTML = S.maint.map((m, i) => `
+    <div class="veh-item ${i === vehSel ? 'selected' : ''}" onclick="selVeh(${i})">
+      <span>${m.name}</span>
+      <span class="veh-km">${m.interval_km.toLocaleString('pt-BR')} km</span>
+    </div>`).join('');
+            if (S.maint[vehSel])
+                setText('v-interval', `${S.maint[vehSel].interval_km.toLocaleString('pt-BR')} KM`);
+        }
+
+        function setSetting(key, val) {
+            if (!S) return;
+            S.settings[key] = val;
+            send({ action: 'save_settings', settings: { [key]: val } });
+            renderSettings();
+        }
+        function adjSet(key, delta, lo, hi) {
+            if (!S) return;
+            setSetting(key, clamp((S.settings[key] || 0) + delta, lo, hi));
+        }
+        const OFF_VALS = [0, 30, 60, 120, 300];
+        function cycleOff(dir) {
+            if (!S) return;
+            let i = OFF_VALS.indexOf(S.settings.screen_off_s);
+            if (i < 0) i = 0;
+            setSetting('screen_off_s', OFF_VALS[(i + dir + OFF_VALS.length) % OFF_VALS.length]);
+        }
+        function selVeh(i) { vehSel = i; renderSettings(); }
+        function adjInterval(d) {
+            if (!S) return;
+            const nv = clamp(S.maint[vehSel].interval_km + d, 1000, 200000);
+            send({ action: 'set_interval', idx: vehSel, km: nv });
+        }
+
+        // ── DOM helpers ───────────────────────────────────────────────
+        function setText(id, v) { const e = el(id); if (e) e.textContent = v; }
+        function setHTML(id, v) { const e = el(id); if (e) e.innerHTML = v; }
+        function tog2(id1, id2, first) {
+            el(id1).classList.toggle('active', first);
+            el(id2).classList.toggle('active', !first);
+        }
+
+        // ── Register form ─────────────────────────────────────────────
+        function openForm(idx) {
+            fIdx = idx;
+            fKm = S ? S.obd.total_km : 0;
+            const now = new Date();
+            fDay = now.getDate(); fMon = now.getMonth() + 1; fYr = now.getFullYear();
+            el('form-title').textContent = `REGISTRAR: ${S.maint[idx].name}`;
+            refreshForm();
+            el('form-overlay').classList.add('open');
+        }
+        function closeForm() { el('form-overlay').classList.remove('open'); }
+        function refreshForm() {
+            setText('f-km', fKm.toLocaleString('pt-BR') + ' KM');
+            setText('f-day', pad2(fDay));
+            setText('f-mon', pad2(fMon));
+            setText('f-yr', fYr);
+        }
+        function adjKm(d) { fKm = clamp(fKm + d, 0, 999999); refreshForm(); }
+        function adjDay(d) { fDay = clamp(fDay + d, 1, 31); refreshForm(); }
+        function adjMon(d) { fMon = clamp(fMon + d, 1, 12); refreshForm(); }
+        function adjYr(d) { fYr = clamp(fYr + d, 2000, 2099); refreshForm(); }
+        function confirmReg() {
+            send({ action: 'register', idx: fIdx, km: fKm, day: fDay, month: fMon, year: fYr });
+            closeForm();
+            nav('maintenance');
+        }
+
+        // ── Boot ──────────────────────────────────────────────────────
+        nav('home');
+        connect();
+    </script>
+</body>
+
+</html>

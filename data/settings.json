@@ -1,0 +1,14 @@
+{
+  "units": 0,
+  "brightness": 70,
+  "screen_off_s": 0,
+  "alert_sound": false,
+  "alert_type": 2,
+  "led_enabled": false,
+  "led_brightness": 60,
+  "led_r": 0,
+  "led_g": 200,
+  "led_b": 50,
+  "led_mode": 0,
+  "led_speed": 60
+}

@@ -1,0 +1,4 @@
+fastapi
+uvicorn[standard]
+# OBD-II real (ELM327 USB/Bluetooth) — remova se usar só simulador
+obd

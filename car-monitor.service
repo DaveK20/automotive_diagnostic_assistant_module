@@ -1,0 +1,27 @@
+[Unit]
+Description=Console de Comando — Car Monitor
+After=network.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/car_monitor
+
+# Altere DATA_DIR para o caminho do cartão SD se necessário
+Environment="DATA_DIR=/home/pi/car_monitor/data"
+
+# Descomente e ajuste se tiver ELM327 USB:
+# Environment="OBD_PORT=/dev/ttyUSB0"
+
+# Descomente para forçar simulador:
+# Environment="OBD_FORCE_SIM=1"
+
+ExecStart=/home/pi/car_monitor/venv/bin/python main.py
+
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
