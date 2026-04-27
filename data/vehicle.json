@@ -1,9 +1,9 @@
 {
-  "total_km": 153261,
+  "total_km": 155568,
   "items": [
     {
       "name": "Troca de Oleo",
-      "interval_km": 10000,
+      "interval_km": 21000,
       "last_km": 45856,
       "last_day": 24,
       "last_month": 4,
@@ -64,6 +64,16 @@
     {
       "name": "Arrefecimento",
       "interval_km": 40000,
+      "last_km": 0,
+      "last_day": 1,
+      "last_month": 1,
+      "last_year": 2024,
+      "alert_active": false,
+      "valid": false
+    },
+    {
+      "name": "Suspencao dianteira",
+      "interval_km": 10000,
       "last_km": 0,
       "last_day": 1,
       "last_month": 1,

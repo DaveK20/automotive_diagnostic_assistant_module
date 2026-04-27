@@ -1489,6 +1489,14 @@
                     </div>
                     <div class="cat-arrow">›</div>
                 </div>
+                <div class="cat-item" style="border-left-color:var(--info)" onclick="nav('set-pinout')">
+                    <div class="cat-icon">🔌</div>
+                    <div class="cat-texts">
+                        <div class="cat-title" style="color:var(--info)">PINOUT / GPIO</div>
+                        <div class="cat-sub">Buzzer, LEDs de alerta, debug</div>
+                    </div>
+                    <div class="cat-arrow">›</div>
+                </div>
             </div>
         </div>
 
@@ -1533,6 +1541,16 @@
                 <div class="interval-val" id="v-interval">---</div>
                 <button class="ival-btn" onclick="adjInterval(1000)">+1k</button>
                 <button class="ival-btn" onclick="adjInterval(10000)">+10k</button>
+            </div>
+            <div style="display:flex;gap:6px;margin-top:8px">
+                <button class="tog-btn" style="flex:1;color:var(--ok);border-color:var(--ok);padding:9px"
+                    onclick="openAddMaint()">⊕ ADICIONAR ITEM</button>
+                <button class="tog-btn" style="flex:1;color:var(--due);border-color:var(--due);padding:9px"
+                    onclick="confirmRemoveMaint()">✕ REMOVER SELECIONADO</button>
+            </div>
+            <div style="display:flex;gap:6px;margin-top:6px">
+                <button class="tog-btn" style="flex:1;color:var(--info);border-color:var(--info);padding:9px"
+                    onclick="openRenameMaint()">✎ RENOMEAR SELECIONADO</button>
             </div>
         </div>
 
@@ -1617,7 +1635,109 @@
             </div>
         </div>
 
+        <!-- SET PINOUT -->
+        <div id="screen-set-pinout" class="screen">
+            <div style="font-size:10px;color:var(--dim);letter-spacing:1px;padding:6px 0 10px;border-bottom:1px solid var(--border);margin-bottom:4px">
+                PINOS BCM (Raspberry Pi GPIO)
+            </div>
+            <div class="set-row">
+                <span class="set-label" style="color:var(--warn)">🔔 Buzzer:</span>
+                <div class="inc-grp">
+                    <button class="inc-btn" onclick="adjPin('pin_buzzer',-1)">−</button>
+                    <div class="inc-val" id="v-pin-buzzer" style="color:var(--warn)">17</div>
+                    <button class="inc-btn" onclick="adjPin('pin_buzzer',1)">+</button>
+                </div>
+                <span style="font-size:10px;color:var(--dim)" id="lbl-pin-buzzer">GPIO17</span>
+            </div>
+            <div style="font-size:10px;color:var(--dim);letter-spacing:1px;padding:8px 0 4px">LEDs DE ALERTA</div>
+            <div class="set-row">
+                <span class="set-label" style="color:var(--due)">🔴 LED Vermelho:</span>
+                <div class="inc-grp">
+                    <button class="inc-btn" onclick="adjPin('pin_led_red',-1)">−</button>
+                    <div class="inc-val" id="v-pin-led-red" style="color:var(--due)">27</div>
+                    <button class="inc-btn" onclick="adjPin('pin_led_red',1)">+</button>
+                </div>
+                <span style="font-size:10px;color:var(--dim)" id="lbl-pin-led-red">GPIO27</span>
+            </div>
+            <div class="set-row">
+                <span class="set-label" style="color:#e0c020">🟡 LED Amarelo:</span>
+                <div class="inc-grp">
+                    <button class="inc-btn" onclick="adjPin('pin_led_yellow',-1)">−</button>
+                    <div class="inc-val" id="v-pin-led-yellow" style="color:#e0c020">22</div>
+                    <button class="inc-btn" onclick="adjPin('pin_led_yellow',1)">+</button>
+                </div>
+                <span style="font-size:10px;color:var(--dim)" id="lbl-pin-led-yellow">GPIO22</span>
+            </div>
+            <div class="set-row">
+                <span class="set-label" style="color:var(--warn)">🟠 LED Laranja:</span>
+                <div class="inc-grp">
+                    <button class="inc-btn" onclick="adjPin('pin_led_orange',-1)">−</button>
+                    <div class="inc-val" id="v-pin-led-orange" style="color:var(--warn)">23</div>
+                    <button class="inc-btn" onclick="adjPin('pin_led_orange',1)">+</button>
+                </div>
+                <span style="font-size:10px;color:var(--dim)" id="lbl-pin-led-orange">GPIO23</span>
+            </div>
+            <div style="font-size:10px;color:var(--dim);letter-spacing:1px;padding:8px 0 4px">DIAGNÓSTICO</div>
+            <div class="set-row">
+                <span class="set-label" style="color:var(--info)">🔵 LED Debug:</span>
+                <div class="inc-grp">
+                    <button class="inc-btn" onclick="adjPin('pin_led_debug',-1)">−</button>
+                    <div class="inc-val" id="v-pin-led-debug" style="color:var(--info)">24</div>
+                    <button class="inc-btn" onclick="adjPin('pin_led_debug',1)">+</button>
+                </div>
+                <span style="font-size:10px;color:var(--dim)" id="lbl-pin-led-debug">GPIO24</span>
+            </div>
+            <div style="margin-top:14px;padding:10px 12px;background:var(--panel-d);border:1px solid var(--border);border-radius:3px;font-size:10px;color:var(--dim);line-height:1.7">
+                <div style="color:var(--text);font-size:11px;margin-bottom:6px;letter-spacing:1px">ℹ REFERÊNCIA BCM</div>
+                Pinos válidos: 2–27 &nbsp;|&nbsp; Evite pinos reservados (0,1,14,15,18)<br>
+                Vermelho → CRÍTICO &nbsp;|&nbsp; Amarelo → ATENÇÃO &nbsp;|&nbsp; Laranja → INFO<br>
+                Debug pisca a cada ciclo OBD (1 Hz)
+            </div>
+        </div>
+
     </div><!-- #content -->
+
+    <!-- ── Overlay: Adicionar item de manutenção ─────────────────── -->
+    <div id="add-maint-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:200;align-items:center;justify-content:center">
+        <div class="form-card">
+            <div class="form-header">⊕ NOVO ITEM DE MANUTENÇÃO</div>
+            <div class="form-body">
+                <div class="form-sec">NOME DO ITEM</div>
+                <input id="new-maint-name" type="text" maxlength="40"
+                    style="width:100%;padding:9px 10px;background:var(--panel-d);border:1px solid var(--ok);color:var(--text);font-family:inherit;font-size:13px;border-radius:2px;outline:none"
+                    placeholder="Ex: Troca de Pneu">
+                <div class="form-sec" style="margin-top:10px">INTERVALO (KM)</div>
+                <div class="form-ctrl">
+                    <button class="form-s-btn" onclick="adjNewInterval(-10000)">-10k</button>
+                    <button class="form-s-btn" onclick="adjNewInterval(-1000)">-1k</button>
+                    <div class="form-display" id="new-interval-val">10.000 KM</div>
+                    <button class="form-s-btn" onclick="adjNewInterval(1000)">+1k</button>
+                    <button class="form-s-btn" onclick="adjNewInterval(10000)">+10k</button>
+                </div>
+                <div class="form-actions">
+                    <button class="btn-confirm" onclick="confirmAddMaint()">✓ ADICIONAR</button>
+                    <button class="btn-cancel" onclick="closeAddMaint()">✕ CANCELAR</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Overlay: Renomear item de manutenção ──────────────────── -->
+    <div id="rename-maint-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:200;align-items:center;justify-content:center">
+        <div class="form-card">
+            <div class="form-header">✎ RENOMEAR ITEM</div>
+            <div class="form-body">
+                <div class="form-sec">NOVO NOME</div>
+                <input id="rename-maint-input" type="text" maxlength="40"
+                    style="width:100%;padding:9px 10px;background:var(--panel-d);border:1px solid var(--info);color:var(--text);font-family:inherit;font-size:13px;border-radius:2px;outline:none"
+                    placeholder="Novo nome">
+                <div class="form-actions">
+                    <button class="btn-confirm" style="border-color:var(--info);color:var(--info)" onclick="confirmRenameMaint()">✓ RENOMEAR</button>
+                    <button class="btn-cancel" onclick="closeRenameMaint()">✕ CANCELAR</button>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <!-- ── Bottom nav ────────────────────────────────────────────── -->
     <div id="nav-bar" style="display:none">
@@ -1712,12 +1832,14 @@
             'set-vehicle': 'VEÍCULO / MANUT.',
             'set-alerts': 'ALERTAS',
             'set-leds': 'LEDs',
+            'set-pinout': 'PINOUT / GPIO',
         };
         const BACK_TO = {
             'set-general': 'settings',
             'set-vehicle': 'settings',
             'set-alerts': 'settings',
             'set-leds': 'settings',
+            'set-pinout': 'settings',
         };
         const NAV_KEY = {
             status: 'nav-status', maintenance: 'nav-maintenance',
@@ -2019,6 +2141,7 @@
     </div>`).join('');
             if (S.maint[vehSel])
                 setText('v-interval', `${S.maint[vehSel].interval_km.toLocaleString('pt-BR')} KM`);
+            renderPinout();
         }
 
         function setSetting(key, val) {
@@ -2043,6 +2166,78 @@
             if (!S) return;
             const nv = clamp(S.maint[vehSel].interval_km + d, 1000, 200000);
             send({ action: 'set_interval', idx: vehSel, km: nv });
+        }
+
+        // ── Pinout ────────────────────────────────────────────────────
+        const VALID_PINS = [2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27];
+        function adjPin(key, d) {
+            if (!S) return;
+            const cur = S.settings[key] ?? 17;
+            const idx = VALID_PINS.indexOf(cur);
+            const ni = Math.max(0, Math.min(VALID_PINS.length - 1, idx + d));
+            setSetting(key, VALID_PINS[ni]);
+        }
+        function renderPinout() {
+            if (!S) return;
+            const s = S.settings;
+            const pins = {
+                'pin-buzzer': s.pin_buzzer ?? 17,
+                'pin-led-red': s.pin_led_red ?? 27,
+                'pin-led-yellow': s.pin_led_yellow ?? 22,
+                'pin-led-orange': s.pin_led_orange ?? 23,
+                'pin-led-debug': s.pin_led_debug ?? 24,
+            };
+            for (const [k, v] of Object.entries(pins)) {
+                setText('v-' + k, v);
+                setText('lbl-' + k, 'GPIO' + v);
+            }
+        }
+
+        // ── Add Maint item ────────────────────────────────────────────
+        let newMaintInterval = 10000;
+        function openAddMaint() {
+            newMaintInterval = 10000;
+            const el2 = el('new-maint-name');
+            if (el2) el2.value = '';
+            setText('new-interval-val', newMaintInterval.toLocaleString('pt-BR') + ' KM');
+            const ov = el('add-maint-overlay');
+            ov.style.display = 'flex';
+        }
+        function closeAddMaint() { el('add-maint-overlay').style.display = 'none'; }
+        function adjNewInterval(d) {
+            newMaintInterval = clamp(newMaintInterval + d, 1000, 200000);
+            setText('new-interval-val', newMaintInterval.toLocaleString('pt-BR') + ' KM');
+        }
+        function confirmAddMaint() {
+            const name = (el('new-maint-name').value || '').trim();
+            if (!name) { el('new-maint-name').style.borderColor = 'var(--due)'; return; }
+            send({ action: 'add_maint', name, interval_km: newMaintInterval });
+            closeAddMaint();
+        }
+
+        // ── Remove Maint item ─────────────────────────────────────────
+        function confirmRemoveMaint() {
+            if (!S || S.maint.length <= 1) return;
+            const name = S.maint[vehSel]?.name || '?';
+            if (confirm(`Remover "${name}" do monitoramento?\nEsta ação não pode ser desfeita.`)) {
+                send({ action: 'remove_maint', idx: vehSel });
+                vehSel = Math.max(0, vehSel - 1);
+            }
+        }
+
+        // ── Rename Maint item ─────────────────────────────────────────
+        function openRenameMaint() {
+            if (!S) return;
+            const inp = el('rename-maint-input');
+            if (inp) inp.value = S.maint[vehSel]?.name || '';
+            el('rename-maint-overlay').style.display = 'flex';
+        }
+        function closeRenameMaint() { el('rename-maint-overlay').style.display = 'none'; }
+        function confirmRenameMaint() {
+            const name = (el('rename-maint-input').value || '').trim();
+            if (!name) return;
+            send({ action: 'rename_maint', idx: vehSel, name });
+            closeRenameMaint();
         }
 
         // ── DOM helpers ───────────────────────────────────────────────

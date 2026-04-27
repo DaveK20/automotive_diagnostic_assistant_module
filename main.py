@@ -66,6 +66,12 @@ def default_settings() -> dict:
         "led_enabled": True, "led_brightness": 70,
         "led_r": 0, "led_g": 200, "led_b": 50,
         "led_mode": 0, "led_speed": 50,
+        # Pinout
+        "pin_buzzer": 17,
+        "pin_led_red": 27,
+        "pin_led_yellow": 22,
+        "pin_led_orange": 23,
+        "pin_led_debug": 24,
     }
 
 def default_vehicle() -> dict:
@@ -335,6 +341,33 @@ async def handle_message(msg: dict) -> None:
         })
         save_json(VEHICLE_FILE, vehicle)
         save_json(HISTORY_FILE, history)
+        await broadcast(build_full_state())
+
+    elif action == "add_maint":
+        name = str(msg.get("name", "Novo Item")).strip()[:40]
+        interval_km = max(1000, min(200_000, int(msg.get("interval_km", 10000))))
+        if name and len(vehicle["items"]) < 20:
+            vehicle["items"].append({
+                "name": name, "interval_km": interval_km,
+                "last_km": 0, "last_day": 1, "last_month": 1, "last_year": 2024,
+                "alert_active": False, "valid": False,
+            })
+            save_json(VEHICLE_FILE, vehicle)
+        await broadcast(build_full_state())
+
+    elif action == "remove_maint":
+        idx = int(msg["idx"])
+        if 0 <= idx < len(vehicle["items"]) and len(vehicle["items"]) > 1:
+            vehicle["items"].pop(idx)
+            save_json(VEHICLE_FILE, vehicle)
+        await broadcast(build_full_state())
+
+    elif action == "rename_maint":
+        idx = int(msg["idx"])
+        name = str(msg.get("name", "")).strip()[:40]
+        if 0 <= idx < len(vehicle["items"]) and name:
+            vehicle["items"][idx]["name"] = name
+            save_json(VEHICLE_FILE, vehicle)
         await broadcast(build_full_state())
 
     elif action == "save_settings":
