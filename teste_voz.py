@@ -5,6 +5,7 @@ import json
 import pyttsx3
 from vosk import Model, KaldiRecognizer
 from threading import Thread
+import os
 
 # =====================
 # CONFIG
@@ -60,6 +61,11 @@ def handle_command(text):
     elif "sair" in text:
         speak("Encerrando sistema")
         root.quit()
+
+    elif "modo putaria" in text:
+        os.startfile("musica\outside.mp3")
+    elif "aura" in text:
+        os.startfile("musica\\aura.mp3")
 
     else:
         speak("Comando não reconhecido")
