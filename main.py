@@ -1,19 +1,21 @@
 """
 main.py — Console de Comando
-FastAPI + WebSocket + Simulador OBD + persistência JSON + Multimídia BT
+FastAPI + WebSocket + Simulador OBD + persistência JSON + Multimídia BT + Assistente de Voz
 
 Estrutura esperada:
   projeto/
     main.py
     static/index.html
-    data/             ← criada automaticamente
+    static/skull.jpg        ← imagem do assistente (copie Yldw7.jpg aqui)
+    data/                   ← criada automaticamente
+    model/                  ← modelo Vosk em português (vosk-model-small-pt-0.3)
+
+Dependências extras para voz:
+  pip install vosk sounddevice pyttsx3
 
 Rodar:
-  pip install fastapi uvicorn[standard]
+  pip install fastapi uvicorn[standard] vosk sounddevice pyttsx3
   python main.py
-
-Variável de ambiente:
-  DATA_DIR  — pasta dos JSONs (default: ./data)
 """
 
 import asyncio
@@ -23,6 +25,8 @@ import os
 import random
 import subprocess
 import logging
+import queue
+import threading
 from pathlib import Path
 from typing import Set
 
@@ -37,6 +41,7 @@ log = logging.getLogger("main")
 BASE_DIR   = Path(__file__).parent
 STATIC_DIR = BASE_DIR / "static"
 DATA_DIR   = Path(os.environ.get("DATA_DIR", BASE_DIR / "data"))
+MODEL_PATH = str(BASE_DIR / "model")
 
 STATIC_DIR.mkdir(parents=True, exist_ok=True)
 DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -54,7 +59,6 @@ MAINT_NAMES = [
 ]
 MAINT_DEFAULT_INTERVALS = [5000, 60000, 20000, 30000, 15000, 30000, 40000]
 
-# Penalidades no readiness por status
 READINESS_PENALTY = {"DUE": 20, "WARN": 10, "NO_RECORD": 5, "OK": 0}
 
 
@@ -66,7 +70,6 @@ def default_settings() -> dict:
         "led_enabled": True, "led_brightness": 70,
         "led_r": 0, "led_g": 200, "led_b": 50,
         "led_mode": 0, "led_speed": 50,
-        # Pinout
         "pin_buzzer": 17,
         "pin_led_red": 27,
         "pin_led_yellow": 22,
@@ -91,7 +94,7 @@ def default_history() -> list:
     return []
 
 
-# ── Persistência JSON (escrita atômica) ──────────────────────────
+# ── Persistência JSON ─────────────────────────────────────────────
 def load_json(path: Path, default_fn):
     try:
         with open(path, encoding="utf-8") as f:
@@ -119,19 +122,13 @@ obd_data: dict = {
     "readiness_pct": 100, "source": "simulator",
 }
 
-# Estado multimídia (local — não persiste)
 media_state: dict = {
-    "playing": False,
-    "muted":   False,
-    "volume":  65,       # 0-100
-    "track":   "---",
-    "artist":  "---",
-    "shuffle": False,
-    "repeat":  False,
+    "playing": False, "muted": False, "volume": 65,
+    "track": "---", "artist": "---", "shuffle": False, "repeat": False,
 }
 
-_sim_t    = 0
-_km_tick  = 0
+_sim_t   = 0
+_km_tick = 0
 
 
 # ── Simulador OBD ────────────────────────────────────────────────
@@ -175,7 +172,7 @@ def simulate_obd() -> None:
         save_json(VEHICLE_FILE, vehicle)
 
 
-# ── Lógica de manutenção ─────────────────────────────────────────
+# ── Manutenção ───────────────────────────────────────────────────
 def calc_maint(item: dict, current_km: int) -> dict:
     next_km      = item["last_km"] + item["interval_km"]
     km_remaining = next_km - current_km
@@ -209,42 +206,20 @@ def calc_maint(item: dict, current_km: int) -> dict:
 
 
 def build_alerts(maint_rows: list) -> list:
-    """
-    Inclui DUE, WARN e NO_RECORD como alertas.
-    DUE → CRITICAL | WARN → WARNING | NO_RECORD → INFO
-    """
     alerts = []
     for m in maint_rows:
         if m["status"] == "DUE":
-            alerts.append({
-                "level": "CRITICAL",
-                "text":  f"{m['name']}: VENCIDA por {abs(m['km_remaining'])} km",
-            })
+            alerts.append({"level": "CRITICAL", "text": f"{m['name']}: VENCIDA por {abs(m['km_remaining'])} km"})
         elif m["status"] == "WARN":
-            alerts.append({
-                "level": "WARNING",
-                "text":  f"{m['name']}: faltam {m['km_remaining']} km",
-            })
+            alerts.append({"level": "WARNING",  "text": f"{m['name']}: faltam {m['km_remaining']} km"})
         elif m["status"] == "NO_RECORD":
-            alerts.append({
-                "level": "INFO",
-                "text":  f"{m['name']}: nenhum registro encontrado",
-            })
-    # Ordenação: CRITICAL → WARNING → INFO
+            alerts.append({"level": "INFO",     "text": f"{m['name']}: nenhum registro encontrado"})
     order = {"CRITICAL": 0, "WARNING": 1, "INFO": 2}
     alerts.sort(key=lambda a: order.get(a["level"], 9))
     return alerts
 
 
 def calc_readiness(maint_rows: list) -> int:
-    """
-    Começa em 100%.
-    Cada item penaliza conforme seu status:
-      DUE       → -20%
-      WARN      → -10%
-      NO_RECORD → -5%
-      OK        → 0%
-    """
     penalty = sum(READINESS_PENALTY.get(m["status"], 0) for m in maint_rows)
     return max(0, 100 - penalty)
 
@@ -267,9 +242,8 @@ def build_full_state() -> dict:
     }
 
 
-# ── Multimídia — playerctl / pactl (Linux / Pi) ──────────────────
+# ── Multimídia ───────────────────────────────────────────────────
 def _run(cmd: list) -> str:
-    """Executa comando shell; retorna stdout ou '' em caso de erro."""
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=2)
         return r.stdout.strip()
@@ -284,32 +258,312 @@ def media_action(action: str) -> None:
         case "prev":       _run(["playerctl", "previous"])
         case "shuffle":
             media_state["shuffle"] = not media_state["shuffle"]
-            _run(["playerctl", "shuffle",
-                  "On" if media_state["shuffle"] else "Off"])
+            _run(["playerctl", "shuffle", "On" if media_state["shuffle"] else "Off"])
         case "repeat":
             media_state["repeat"] = not media_state["repeat"]
-            _run(["playerctl", "loop",
-                  "Track" if media_state["repeat"] else "None"])
+            _run(["playerctl", "loop", "Track" if media_state["repeat"] else "None"])
         case "vol_up":
             media_state["volume"] = min(100, media_state["volume"] + 5)
-            _run(["pactl", "set-sink-volume", "@DEFAULT_SINK@",
-                  f"{media_state['volume']}%"])
+            _run(["pactl", "set-sink-volume", "@DEFAULT_SINK@", f"{media_state['volume']}%"])
         case "vol_down":
             media_state["volume"] = max(0, media_state["volume"] - 5)
-            _run(["pactl", "set-sink-volume", "@DEFAULT_SINK@",
-                  f"{media_state['volume']}%"])
+            _run(["pactl", "set-sink-volume", "@DEFAULT_SINK@", f"{media_state['volume']}%"])
         case "mute":
             media_state["muted"] = not media_state["muted"]
-            _run(["pactl", "set-sink-mute", "@DEFAULT_SINK@",
-                  "toggle"])
+            _run(["pactl", "set-sink-mute", "@DEFAULT_SINK@", "toggle"])
 
 def media_poll() -> None:
-    """Lê estado real do playerctl (se disponível)."""
     status = _run(["playerctl", "status"])
     if status:
         media_state["playing"] = status.lower() == "playing"
         media_state["track"]   = _run(["playerctl", "metadata", "title"])  or "---"
         media_state["artist"]  = _run(["playerctl", "metadata", "artist"]) or "---"
+
+
+# ═══════════════════════════════════════════════════════════════════
+# ── ASSISTENTE DE VOZ ────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════
+
+voice_clients: Set[WebSocket] = set()   # clientes que recebem eventos de voz
+_voice_listening = False
+_voice_thread: threading.Thread | None = None
+_audio_queue: queue.Queue = queue.Queue()
+
+# Comandos customizados (sincronizados pelo frontend)
+_custom_commands: list = []
+
+# Palavras que ativam o overlay "processando"
+WAKE_WORDS = {"assistente", "sistema", "comando", "ei", "oi", "olá"}
+
+
+def _tts_speak(text: str) -> None:
+    """Fala o texto usando pyttsx3 (síncrono — roda em thread separada)."""
+    try:
+        import pyttsx3
+        engine = pyttsx3.init()
+        engine.setProperty("rate", 180)
+        engine.say(text)
+        engine.runAndWait()
+    except Exception as e:
+        log.warning("TTS erro: %s", e)
+
+
+def _execute_media_action(action: str) -> None:
+    """Executa ação de mídia pelo nome."""
+    match action:
+        case "play_pause": _run(["playerctl", "play-pause"])
+        case "next":       _run(["playerctl", "next"])
+        case "prev":       _run(["playerctl", "previous"])
+        case "vol_up":
+            media_state["volume"] = min(100, media_state["volume"] + 10)
+            _run(["pactl", "set-sink-volume", "@DEFAULT_SINK@", f"{media_state['volume']}%"])
+        case "vol_down":
+            media_state["volume"] = max(0, media_state["volume"] - 10)
+            _run(["pactl", "set-sink-volume", "@DEFAULT_SINK@", f"{media_state['volume']}%"])
+        case "mute":
+            media_state["muted"] = not media_state["muted"]
+            _run(["pactl", "set-sink-mute", "@DEFAULT_SINK@", "toggle"])
+
+
+def _resolve_action_response(action: str) -> str:
+    """Gera resposta textual para ações de relatório."""
+    if action == "status_report":
+        fuel = obd_data.get("fuel_pct", 0)
+        temp = obd_data.get("temp_c", 0)
+        rpm  = obd_data.get("rpm", 0)
+        spd  = obd_data.get("speed_kmh", 0)
+        rdy  = obd_data.get("readiness_pct", 100)
+        return (f"Sistema pronto. Combustível {fuel}%, temperatura {temp} graus, "
+                f"rotação {rpm} RPM, velocidade {spd} quilômetros por hora, "
+                f"prontidão do veículo {rdy}%")
+    if action == "fuel_report":
+        return f"Combustível em {obd_data.get('fuel_pct', 0)} por cento"
+    if action == "temp_report":
+        return f"Temperatura do motor: {obd_data.get('temp_c', 0)} graus Celsius"
+    if action == "km_report":
+        return f"Quilometragem total: {obd_data.get('total_km', 0):,} quilômetros".replace(",", ".")
+    if action == "maint_report":
+        due = [m["name"] for m in
+               [calc_maint(i, obd_data["total_km"]) for i in vehicle["items"]]
+               if m["status"] in ("DUE", "WARN")]
+        if due:
+            return f"Atenção: {', '.join(due[:3])} precisam de revisão"
+        return "Todas as manutenções estão em dia"
+    return ""
+
+
+def _handle_voice_command(text: str) -> str:
+    """
+    1. Tenta casar com comandos customizados (do frontend)
+    2. Cai nos comandos built-in
+    Retorna texto da resposta.
+    """
+    text_lower = text.lower().strip()
+
+    # 1. Comandos customizados (enviados pelo frontend)
+    for cmd in _custom_commands:
+        keywords = cmd.get("keywords", [])
+        if any(kw in text_lower for kw in keywords):
+            action   = cmd.get("action", "none")
+            response = cmd.get("response", "")
+            if action and action != "none":
+                if action in ("play_pause","next","prev","vol_up","vol_down","mute"):
+                    _execute_media_action(action)
+                else:
+                    response = _resolve_action_response(action) or response
+            return response or "Comando executado"
+
+    # 2. Comandos built-in
+    if any(w in text_lower for w in ("tocar", "play", "música", "musica")):
+        _run(["playerctl", "play"])
+        media_state["playing"] = True
+        return "Tocando música"
+    if any(w in text_lower for w in ("pausar", "pausa")):
+        _run(["playerctl", "pause"])
+        media_state["playing"] = False
+        return "Música pausada"
+    if any(w in text_lower for w in ("próxima", "proxima", "avançar")):
+        _run(["playerctl", "next"])
+        return "Próxima música"
+    if any(w in text_lower for w in ("anterior", "voltar")):
+        _run(["playerctl", "previous"])
+        return "Música anterior"
+    if any(w in text_lower for w in ("volume mais", "aumentar volume")):
+        _execute_media_action("vol_up")
+        return f"Volume aumentado para {media_state['volume']}%"
+    if any(w in text_lower for w in ("volume menos", "diminuir volume")):
+        _execute_media_action("vol_down")
+        return f"Volume reduzido para {media_state['volume']}%"
+    if any(w in text_lower for w in ("mudo", "silêncio", "silencio")):
+        _execute_media_action("mute")
+        return "Mudo ativado" if media_state["muted"] else "Mudo desativado"
+    if any(w in text_lower for w in ("status", "situação", "situacao")):
+        return _resolve_action_response("status_report")
+    if any(w in text_lower for w in ("combustível", "combustivel", "gasolina")):
+        return _resolve_action_response("fuel_report")
+    if any(w in text_lower for w in ("temperatura", "motor")):
+        return _resolve_action_response("temp_report")
+    if any(w in text_lower for w in ("quilometragem", "quilômetros", "km")):
+        return _resolve_action_response("km_report")
+    if any(w in text_lower for w in ("manutenção", "manutencao", "revisão")):
+        return _resolve_action_response("maint_report")
+    if any(w in text_lower for w in ("sair", "desligar", "encerrar")):
+        return "Encerrando assistente de voz"
+
+    return "Comando não reconhecido. Tente: status, música, volume, manutenção"
+
+
+def _build_startup_greeting() -> str:
+    """Monta a saudação completa de inicialização."""
+    import datetime
+    hora = datetime.datetime.now().hour
+    if hora < 12:   saud = "Bom dia"
+    elif hora < 18: saud = "Boa tarde"
+    else:           saud = "Boa noite"
+
+    fuel = obd_data.get("fuel_pct", 0)
+    temp = obd_data.get("temp_c", 0)
+    rdy  = obd_data.get("readiness_pct", 100)
+
+    # Alertas críticos
+    maint_rows = [calc_maint(item, obd_data["total_km"]) for item in vehicle["items"]]
+    due_items  = [m["name"] for m in maint_rows if m["status"] == "DUE"]
+    warn_items = [m["name"] for m in maint_rows if m["status"] == "WARN"]
+
+    parts = [f"{saud}. Sistema de bordo iniciado."]
+    parts.append(f"Combustível: {fuel}%. Temperatura do motor: {temp} graus.")
+
+    if rdy < 60:
+        parts.append(f"Atenção: prontidão do veículo em apenas {rdy}%.")
+    else:
+        parts.append(f"Prontidão do veículo: {rdy}%.")
+
+    if due_items:
+        parts.append(f"ALERTA CRÍTICO: {', '.join(due_items[:2])} vencida{'s' if len(due_items) > 1 else ''}.")
+    if warn_items:
+        parts.append(f"Atenção: {', '.join(warn_items[:2])} próxima{'s' if len(warn_items) > 1 else ''} do vencimento.")
+    if not due_items and not warn_items:
+        parts.append("Todas as manutenções estão em dia.")
+
+    parts.append("Aguardando seus comandos.")
+    return " ".join(parts)
+
+
+async def _broadcast_voice(event: dict) -> None:
+    """Envia evento de voz para todos os clientes WebSocket conectados."""
+    msg  = json.dumps(event, ensure_ascii=False)
+    dead = set()
+    for ws in list(clients | voice_clients):
+        try:
+            await ws.send_text(msg)
+        except Exception:
+            dead.add(ws)
+    clients.difference_update(dead)
+    voice_clients.difference_update(dead)
+
+
+def _audio_callback(indata, frames, time, status):
+    if status:
+        log.debug("audio status: %s", status)
+    _audio_queue.put(bytes(indata))
+
+
+def _voice_listen_loop(loop: asyncio.AbstractEventLoop) -> None:
+    """Loop de escuta Vosk — roda em thread daemon."""
+    global _voice_listening
+
+    try:
+        import sounddevice as sd
+        from vosk import Model, KaldiRecognizer
+    except ImportError:
+        log.error("Vosk ou sounddevice não instalados. Execute: pip install vosk sounddevice")
+        asyncio.run_coroutine_threadsafe(
+            _broadcast_voice({"type": "voice_error", "msg": "Vosk não instalado"}), loop
+        )
+        return
+
+    try:
+        model = Model(MODEL_PATH)
+    except Exception as e:
+        log.error("Modelo Vosk não encontrado em '%s': %s", MODEL_PATH, e)
+        asyncio.run_coroutine_threadsafe(
+            _broadcast_voice({"type": "voice_error", "msg": f"Modelo não encontrado: {MODEL_PATH}"}), loop
+        )
+        return
+
+    rec = KaldiRecognizer(model, 16000)
+    log.info("🎤 Assistente de voz iniciado")
+
+    try:
+        with sd.RawInputStream(samplerate=16000, blocksize=8000,
+                               dtype="int16", channels=1,
+                               callback=_audio_callback):
+            while _voice_listening:
+                try:
+                    data = _audio_queue.get(timeout=0.5)
+                except queue.Empty:
+                    continue
+
+                if rec.AcceptWaveform(data):
+                    result = json.loads(rec.Result())
+                    text   = result.get("text", "").strip()
+                    if not text:
+                        continue
+
+                    log.info("🗣  Reconhecido: %s", text)
+
+                    # Detecta wake word → mostra overlay de processando
+                    words = text.lower().split()
+                    has_wake = any(w in WAKE_WORDS for w in words)
+
+                    if has_wake or True:   # True = processa todos os comandos
+                        # 1. Notifica UI: mostrando processando
+                        asyncio.run_coroutine_threadsafe(
+                            _broadcast_voice({
+                                "type":    "voice_processing",
+                                "heard":   text,
+                            }), loop
+                        )
+
+                        # 2. Interpreta e fala
+                        response = _handle_voice_command(text)
+                        threading.Thread(target=_tts_speak, args=(response,), daemon=True).start()
+
+                        # 3. Notifica UI: resposta pronta
+                        asyncio.run_coroutine_threadsafe(
+                            _broadcast_voice({
+                                "type":     "voice_response",
+                                "heard":    text,
+                                "response": response,
+                            }), loop
+                        )
+
+    except Exception as e:
+        log.error("Erro no loop de voz: %s", e)
+        asyncio.run_coroutine_threadsafe(
+            _broadcast_voice({"type": "voice_error", "msg": str(e)}), loop
+        )
+    finally:
+        _voice_listening = False
+        log.info("🛑 Assistente de voz encerrado")
+
+
+def start_voice(loop: asyncio.AbstractEventLoop) -> dict:
+    global _voice_listening, _voice_thread
+    if _voice_listening:
+        return {"ok": False, "msg": "Já escutando"}
+    _voice_listening = True
+    _voice_thread = threading.Thread(
+        target=_voice_listen_loop, args=(loop,), daemon=True
+    )
+    _voice_thread.start()
+    return {"ok": True, "msg": "Assistente iniciado"}
+
+
+def stop_voice() -> dict:
+    global _voice_listening
+    _voice_listening = False
+    return {"ok": True, "msg": "Assistente parado"}
 
 
 # ── WebSocket ────────────────────────────────────────────────────
@@ -325,20 +579,62 @@ async def broadcast(data: dict) -> None:
             dead.add(ws)
     clients.difference_update(dead)
 
-async def handle_message(msg: dict) -> None:
+async def handle_message(msg: dict, ws: WebSocket | None = None) -> None:
     action = msg.get("action")
 
+    # ── Voz ──────────────────────────────────────────────────────
+    if action == "voice_start":
+        loop = asyncio.get_event_loop()
+        result = start_voice(loop)
+        if ws:
+            await ws.send_text(json.dumps({"type": "voice_status", **result}))
+        return
+
+    if action == "voice_stop":
+        result = stop_voice()
+        if ws:
+            await ws.send_text(json.dumps({"type": "voice_status", **result}))
+        return
+
+    if action == "voice_startup":
+        # Saudação de inicialização: aguarda 1s para OBD ter dados
+        await asyncio.sleep(1.2)
+        greeting = _build_startup_greeting()
+        threading.Thread(target=_tts_speak, args=(greeting,), daemon=True).start()
+        await _broadcast_voice({
+            "type":     "voice_response",
+            "heard":    "",
+            "response": greeting,
+        })
+        return
+
+    if action == "voice_sync_commands":
+        # Recebe lista de comandos customizados do frontend e atualiza globalmente
+        global _custom_commands
+        _custom_commands = msg.get("commands", [])
+        log.info("Comandos customizados sincronizados: %d entradas", len(_custom_commands))
+        return
+
+    if action == "voice_command":
+        # Permite enviar comando de voz via texto (teclado ou botão físico)
+        text = msg.get("text", "").strip()
+        if not text:
+            return
+        loop = asyncio.get_event_loop()
+        await _broadcast_voice({"type": "voice_processing", "heard": text})
+        response = _handle_voice_command(text)
+        threading.Thread(target=_tts_speak, args=(response,), daemon=True).start()
+        await _broadcast_voice({"type": "voice_response", "heard": text, "response": response})
+        return
+
+    # ── Manutenção / configurações (original) ────────────────────
     if action == "register":
         idx, km = int(msg["idx"]), int(msg["km"])
         day, month, year = int(msg["day"]), int(msg["month"]), int(msg["year"])
         item = vehicle["items"][idx]
         item.update(last_km=km, last_day=day, last_month=month,
                     last_year=year, alert_active=False, valid=True)
-        history.append({
-            "date": f"{day:02d}/{month:02d}/{year:04d}",
-            "item": item["name"],
-            "km":   str(km),
-        })
+        history.append({"date": f"{day:02d}/{month:02d}/{year:04d}", "item": item["name"], "km": str(km)})
         save_json(VEHICLE_FILE, vehicle)
         save_json(HISTORY_FILE, history)
         await broadcast(build_full_state())
@@ -387,7 +683,6 @@ async def handle_message(msg: dict) -> None:
     elif action == "media":
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, media_action, msg.get("cmd", ""))
-        # Atualiza playing state após comandos de faixa
         if msg.get("cmd") in ("play_pause", "next", "prev"):
             await asyncio.sleep(0.3)
             await loop.run_in_executor(None, media_poll)
@@ -416,7 +711,7 @@ async def ws_endpoint(ws: WebSocket) -> None:
     try:
         while True:
             raw = await ws.receive_text()
-            await handle_message(json.loads(raw))
+            await handle_message(json.loads(raw), ws)
     except WebSocketDisconnect:
         clients.discard(ws)
 
@@ -426,6 +721,7 @@ async def startup() -> None:
 
 @app.on_event("shutdown")
 async def shutdown() -> None:
+    stop_voice()
     vehicle["total_km"] = obd_data["total_km"]
     save_json(VEHICLE_FILE, vehicle)
 
@@ -433,7 +729,6 @@ async def obd_loop() -> None:
     tick = 0
     while True:
         simulate_obd()
-        # Atualiza estado do playerctl a cada 5 s
         if tick % 5 == 0:
             loop = asyncio.get_event_loop()
             await loop.run_in_executor(None, media_poll)
