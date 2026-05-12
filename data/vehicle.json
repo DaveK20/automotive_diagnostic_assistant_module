@@ -1,5 +1,5 @@
 {
-  "total_km": 169468,
+  "total_km": 170496,
   "items": [
     {
       "name": "Troca de Oleo",
@@ -73,6 +73,16 @@
     },
     {
       "name": "Suspencao dianteira",
+      "interval_km": 10000,
+      "last_km": 0,
+      "last_day": 1,
+      "last_month": 1,
+      "last_year": 2024,
+      "alert_active": false,
+      "valid": false
+    },
+    {
+      "name": "troca de calsinha",
       "interval_km": 10000,
       "last_km": 0,
       "last_day": 1,
