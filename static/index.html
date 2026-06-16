@@ -1579,18 +1579,48 @@
             }
         }
 
+        /* Botão iniciar/parar escuta no overlay */
+        #voice-toggle-btn {
+            margin-top: 16px;
+            padding: 10px 30px;
+            background: #1a0a30;
+            border: 1.5px solid #6a30c0;
+            color: #c060ff;
+            font-family: inherit;
+            font-size: 13px;
+            letter-spacing: 1px;
+            cursor: pointer;
+            border-radius: 4px;
+            transition: background .2s, border-color .2s, color .2s;
+        }
+
+        #voice-toggle-btn:hover {
+            background: #2a1050;
+        }
+
+        #voice-toggle-btn.listening {
+            border-color: var(--due);
+            color: var(--due);
+            background: #2a0808;
+        }
+
+        #voice-toggle-btn.listening:hover {
+            background: #3a1010;
+        }
+
         /* Fechar overlay */
         #voice-close-btn {
-            margin-top: 22px;
-            padding: 8px 24px;
+            margin-top: 10px;
+            padding: 7px 22px;
             background: transparent;
-            border: 1px solid #444;
+            border: 1px solid #333;
             color: var(--dim);
             font-family: inherit;
             font-size: 11px;
             letter-spacing: 1px;
             cursor: pointer;
             border-radius: 2px;
+            transition: border-color .15s, color .15s;
         }
 
         #voice-close-btn:hover {
@@ -1665,7 +1695,7 @@
             <span id="conn-dot"></span>
             <span id="alert-badge"></span>
             <!-- Botão de voz flutuante na top bar -->
-            <div id="voice-fab" onclick="toggleVoiceOverlay()" title="Assistente de Voz">
+            <div id="voice-fab" onclick="toggleVoice()" title="Assistente de Voz">
                 <span id="voice-fab-icon">🎙️</span>
             </div>
         </div>
@@ -1697,7 +1727,7 @@
                     <div class="hicon">⚙️</div>
                     <div class="hlabel" style="color:var(--dim)">CONFIGURAÇÕES</div>
                 </div>
-                <div class="home-btn full voice-btn" id="voice-home-btn" onclick="toggleVoiceOverlay()">
+                <div class="home-btn full voice-btn" id="voice-home-btn" onclick="toggleVoice()">
                     <div class="hicon" id="voice-home-icon">🎙️</div>
                     <div class="hlabel" id="voice-home-label" style="color:#a060ff">ASSISTENTE DE VOZ</div>
                 </div>
@@ -2166,8 +2196,11 @@
             <div class="vw-bar"></div>
         </div>
 
+        <!-- Botão principal de escuta -->
+        <button id="voice-toggle-btn" onclick="toggleVoice()">🎙️ INICIAR ESCUTA</button>
+
         <!-- Status e texto ouvido -->
-        <div id="voice-status-label">AGUARDANDO COMANDO...</div>
+        <div id="voice-status-label">TOQUE PARA INICIAR</div>
         <div id="voice-heard"></div>
 
         <!-- Balão de resposta -->
@@ -2189,6 +2222,10 @@
 
     <!-- ── Bottom nav ────────────────────────────────────────────── -->
     <div id="nav-bar" style="display:none">
+        <div class="nav-btn" id="nav-home" onclick="nav('home')">
+            <div class="nav-icon">🏠</div>
+            <div>INÍCIO</div>
+        </div>
         <div class="nav-btn" id="nav-status" onclick="nav('status')">
             <div class="nav-icon">🚗</div>
             <div>STATUS</div>
@@ -2350,10 +2387,11 @@
             ws.onmessage = e => {
                 const data = JSON.parse(e.data);
                 // Eventos de voz têm type próprio
+                if (data.type === 'voice_ready')      { onVoiceReady(data);      return; }
                 if (data.type === 'voice_processing') { onVoiceProcessing(data); return; }
-                if (data.type === 'voice_response') { onVoiceResponse(data); return; }
-                if (data.type === 'voice_error') { onVoiceError(data); return; }
-                if (data.type === 'voice_status') { onVoiceStatus(data); return; }
+                if (data.type === 'voice_response')   { onVoiceResponse(data);   return; }
+                if (data.type === 'voice_error')      { onVoiceError(data);      return; }
+                if (data.type === 'voice_status')     { onVoiceStatus(data);     return; }
                 // Estado normal
                 S = data;
                 render();
@@ -2588,8 +2626,8 @@
                 if (cmd === 'mute') S.media.muted = !S.media.muted;
                 if (cmd === 'shuffle') S.media.shuffle = !S.media.shuffle;
                 if (cmd === 'repeat') S.media.repeat = !S.media.repeat;
-                if (cmd === 'vol_up') S.media.volume = Math.min(100, S.media.volume + 5);
-                if (cmd === 'vol_down') S.media.volume = Math.max(0, S.media.volume - 5);
+                if (cmd === 'vol_up')   S.media.volume = Math.min(100, S.media.volume + 5);
+                if (cmd === 'vol_down') S.media.volume = Math.max(0,   S.media.volume - 5);
                 renderMultimedia();
             }
             send({ action: 'media', cmd });
@@ -2597,11 +2635,10 @@
 
         function volClick(e) {
             const rect = el('vol-bar-wrap').getBoundingClientRect();
-            const pct = Math.round((e.clientX - rect.left) / rect.width * 100);
-            const vol = clamp(pct, 0, 100);
+            const vol  = clamp(Math.round((e.clientX - rect.left) / rect.width * 100), 0, 100);
             if (S && S.media) {
                 S.media.volume = vol;
-                S.media.muted = false;
+                S.media.muted  = false;
                 renderMultimedia();
             }
             send({ action: 'media', cmd: 'vol_set', value: vol });
@@ -2926,7 +2963,15 @@
             el('voice-wave').classList.toggle('active', voiceListening);
             el('voice-response-box').classList.remove('show');
             el('voice-heard').textContent = '';
-            el('voice-status-label').textContent = voiceListening ? 'ESCUTANDO...' : 'TOQUE 🎙️ PARA INICIAR';
+            if (voiceListening) {
+                el('voice-status-label').textContent = 'ESCUTANDO...';
+                el('voice-toggle-btn').textContent = '🛑 PARAR ESCUTA';
+                el('voice-toggle-btn').classList.add('listening');
+            } else {
+                el('voice-status-label').textContent = 'TOQUE PARA INICIAR';
+                el('voice-toggle-btn').textContent = '🎙️ INICIAR ESCUTA';
+                el('voice-toggle-btn').classList.remove('listening');
+            }
         }
 
         function closeVoiceOverlay() {
@@ -2944,8 +2989,10 @@
                 el('voice-home-btn').classList.add('listening');
                 el('voice-home-icon').textContent = '🔴';
                 el('voice-home-label').textContent = 'ESCUTANDO... (toque para parar)';
+                el('voice-toggle-btn').textContent = '⏳ CARREGANDO...';
+                el('voice-toggle-btn').classList.add('listening');
+                el('voice-status-label').textContent = 'CARREGANDO MODELO...';
                 if (!voiceOverlayOpen) openVoiceOverlay();
-                el('voice-status-label').textContent = 'INICIANDO...';
             } else {
                 voiceListening = false;
                 send({ action: 'voice_stop' });
@@ -2956,6 +3003,8 @@
                 el('voice-home-label').textContent = 'ASSISTENTE DE VOZ';
                 el('voice-wave').classList.remove('active');
                 el('voice-status-label').textContent = 'ASSISTENTE PARADO';
+                el('voice-toggle-btn').textContent = '🎙️ INICIAR ESCUTA';
+                el('voice-toggle-btn').classList.remove('listening');
             }
         }
 
@@ -2964,12 +3013,13 @@
             if (startupDone || !S) return;
             startupDone = true;
             send({ action: 'voice_startup' });
-            openVoiceOverlay();
+            // Não abre o overlay automaticamente — a saudação toca em TTS em background
         }
 
         // ── Evento: processando ───────────────────────────────────
         function onVoiceProcessing(data) {
-            if (!voiceOverlayOpen) openVoiceOverlay();
+            // Só abre o overlay se o assistente já estava escutando (não na saudação inicial)
+            if (!voiceOverlayOpen && voiceListening) openVoiceOverlay();
             el('voice-overlay').classList.remove('responding');
             el('voice-wave').classList.add('active');
             el('voice-status-label').textContent = 'PROCESSANDO...';
@@ -2980,7 +3030,7 @@
 
         // ── Evento: resposta pronta ───────────────────────────────
         function onVoiceResponse(data) {
-            if (!voiceOverlayOpen) openVoiceOverlay();
+            if (!voiceOverlayOpen && voiceListening) openVoiceOverlay();
             el('voice-wave').classList.remove('active');
             el('voice-overlay').classList.add('responding');
             el('voice-status-label').textContent = '🔊 RESPONDENDO';
@@ -3013,23 +3063,49 @@
         function onVoiceError(data) {
             el('voice-status-label').textContent = '⚠ ' + data.msg;
             el('voice-wave').classList.remove('active');
-            if (data.fatal) {
-                voiceListening = false;
-                el('voice-fab').classList.remove('listening');
-                el('voice-fab-icon').textContent = '🎙️';
-                el('voice-home-btn').classList.remove('listening');
-                el('voice-home-icon').textContent = '🎙️';
-                el('voice-home-label').textContent = 'ASSISTENTE DE VOZ';
-            }
+            voiceListening = false;
+            el('voice-fab').classList.remove('listening');
+            el('voice-fab-icon').textContent = '🎙️';
+            el('voice-home-btn').classList.remove('listening');
+            el('voice-home-icon').textContent = '🎙️';
+            el('voice-home-label').textContent = 'ASSISTENTE DE VOZ';
+            el('voice-toggle-btn').textContent = '🎙️ INICIAR ESCUTA';
+            el('voice-toggle-btn').classList.remove('listening');
+        }
+
+        // ── Som de aviso quando o assistente está pronto para escutar ─
+        function _playBeep(freq, dur) {
+            try {
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                const osc  = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.type = 'sine';
+                osc.frequency.value = freq || 880;
+                gain.gain.setValueAtTime(0.22, ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + (dur || 0.18));
+                osc.start(ctx.currentTime);
+                osc.stop(ctx.currentTime + (dur || 0.18));
+                setTimeout(() => ctx.close(), 500);
+            } catch (_) {}
+        }
+
+        // ── Evento: modelo carregado, escuta ativa ────────────────
+        function onVoiceReady() {
+            // Toca dois bips ascendentes (estilo "assistente pronto")
+            _playBeep(880, 0.14);
+            setTimeout(() => _playBeep(1100, 0.12), 190);
+            el('voice-wave').classList.add('active');
+            el('voice-status-label').textContent = 'ESCUTANDO...';
+            el('voice-toggle-btn').textContent = '🛑 PARAR ESCUTA';
+            el('voice-toggle-btn').classList.add('listening');
         }
 
         // ── Evento: status confirmado ─────────────────────────────
         function onVoiceStatus(data) {
-            if (!data.ok) { onVoiceError({ ...data, fatal: true }); return; }
-            if (voiceListening) {
-                el('voice-wave').classList.add('active');
-                el('voice-status-label').textContent = 'ESCUTANDO...';
-            }
+            if (!data.ok) { onVoiceError(data); return; }
+            // voice_ready chegará logo depois quando o modelo terminar de carregar
         }
 
         // ── Enviar comando de texto manual ────────────────────────
